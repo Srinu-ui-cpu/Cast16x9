@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Cast16:9</string>
+    <string name="tab_mirror">Mirror 16:9</string>
+    <string name="tab_media">Media Beam</string>
+    <string name="tab_files">File Share</string>
+
+    <string name="title_screen_mirror">Full TV 16:9 Screen Mirror</string>
+    <string name="desc_screen_mirror">Mirror your phone or smartwatch to any TV in full 16:9 with ZERO black bars!</string>
+    <string name="btn_start_mirror">Start Screen Mirror</string>
+    <string name="btn_stop_mirror">Stop Mirroring</string>
+
+    <string name="tv_instructions">Open this URL in your TV Web Browser:</string>
+    <string name="mode_cover">Cover (16:9 Zoom - No Bars)</string>
+    <string name="mode_stretch">Stretch (16:9 Fill - No Bars)</string>
+    <string name="mode_fit">Fit (Original Aspect)</string>
+
+    <string name="btn_scan_dlna">Scan for DLNA TVs</string>
+    <string name="btn_share_files">Add Files to Share</string>
+    <string name="no_media">No media items found. Grant storage permissions to scan photos and videos.</string>
+    <string name="no_files">No files currently shared. Tap \'Add Files to Share\' to share documents, music, or APKs with your TV.</string>
+</resources>

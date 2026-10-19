@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <!-- Top App Bar -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/card_background"
+        app:title="Cast16:9 • Fullscreen Mirror"
+        app:titleTextColor="@color/text_primary"
+        app:subtitle="TV Web Receiver &amp; DLNA"
+        app:subtitleTextColor="@color/text_highlight"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- Tab View Container (Holds the 3 Sections) -->
+    <FrameLayout
+        android:id="@+id/content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toBottomOf="@id/toolbar"
+        app:layout_constraintBottom_toTopOf="@id/bottom_navigation">
+
+        <!-- ================= SECTION 1: SCREEN MIRRORING ================= -->
+        <ScrollView
+            android:id="@+id/layout_mirror"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- TV Connection URL & QR Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="@color/card_background"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1dp"
+                    app:cardCornerRadius="14dp"
+                    android:layout_marginBottom="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp"
+                        android:gravity="center_horizontal">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Open TV Web Browser to:"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="14sp" />
+
+                        <TextView
+                            android:id="@+id/tv_receiver_url"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="http://192.168.1.15:8080"
+                            android:textColor="@color/text_highlight"
+                            android:textSize="20sp"
+                            android:textStyle="bold"
+                            android:layout_marginTop="4dp"
+                            android:layout_marginBottom="12dp" />
+
+                        <ImageView
+                            android:id="@+id/iv_qr_code"
+                            android:layout_width="160dp"
+                            android:layout_height="160dp"
+                            android:contentDescription="QR Code for TV pairing"
+                            android:background="#FFFFFF"
+                            android:padding="6dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Scan with phone or type URL into TV browser"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="8dp" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 16:9 Aspect Ratio Selector (Cover / Stretch / Fit) -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="@color/card_background"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1dp"
+                    app:cardCornerRadius="14dp"
+                    android:layout_marginBottom="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📺 TV Display Aspect Mode:"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="10dp" />
+
+                        <RadioGroup
+                            android:id="@+id/rg_aspect_modes"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <RadioButton
+                                android:id="@+id/rb_cover"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="🟢 16:9 Zoom / Cover (No Black Bars)"
+                                android:textColor="@color/text_primary"
+                                android:checked="true" />
+
+                            <RadioButton
+                                android:id="@+id/rb_stretch"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="🔵 16:9 Stretch / Fill (No Black Bars)"
+                                android:textColor="@color/text_primary" />
+
+                            <RadioButton
+                                android:id="@+id/rb_fit"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="⚪ Original Ratio / Fit (Contain)"
+                                android:textColor="@color/text_primary" />
+                        </RadioGroup>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="* Smartwatches (1:1) and tall phones (20:9) fill the entire 16:9 TV screen without side black bars!"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="8dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Action Button: Start / Stop Mirroring -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_toggle_mirror"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="Start Screen Mirroring"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="12dp"
+                    app:backgroundTint="@color/primary" />
+
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ================= SECTION 2: MEDIA CASTING ================= -->
+        <LinearLayout
+            android:id="@+id/layout_media"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_scan_dlna"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔍 Scan DLNA TVs"
+                    android:textSize="13sp"
+                    app:backgroundTint="#21262D"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1dp" />
+
+                <TextView
+                    android:id="@+id/tv_dlna_status"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:text="Target: Web Receiver"
+                    android:textColor="@color/text_highlight"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_media_items"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/tv_empty_media"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/no_media"
+                android:textColor="@color/text_secondary"
+                android:gravity="center"
+                android:padding="24dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- ================= SECTION 3: FILE SHARING ================= -->
+        <LinearLayout
+            android:id="@+id/layout_files"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_add_files"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="➕ Add Files to Share"
+                    android:textSize="13sp"
+                    app:backgroundTint="@color/secondary" />
+
+                <TextView
+                    android:id="@+id/tv_files_count"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:text="0 files shared"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_shared_files"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/tv_empty_files"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/no_files"
+                android:textColor="@color/text_secondary"
+                android:gravity="center"
+                android:padding="24dp"
+                android:visibility="visible" />
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- Bottom Navigation Bar -->
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottom_navigation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/card_background"
+        app:itemIconTint="@color/text_highlight"
+        app:itemTextColor="@color/text_primary"
+        app:menu="@menu/bottom_nav_menu"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
