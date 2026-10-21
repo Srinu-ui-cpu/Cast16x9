@@ -3,10 +3,6 @@ name: Build & Release Cast16x9 APK
 on:
   push:
     branches: [ "main", "master" ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 permissions:
@@ -26,23 +22,18 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@v3
-        continue-on-error: true
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
 
-      - name: Make Gradlew Executable
-        run: chmod +x ./gradlew
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses 2>/dev/null || true
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
 
       - name: Rename APK for Easy Download
         run: |
@@ -56,12 +47,20 @@ jobs:
           path: release-output/Cast16x9-FullTV-ScreenMirror.apk
           retention-days: 30
 
-      - name: Create GitHub Release on Tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
+        if: success()
         with:
+          tag_name: v1.0.0
+          name: Cast16x9 v1.0.0 Release APK
+          body: |
+            ### Cast16x9 - Full Screen 16:9 Screen Mirror & Media Beamer
+            - **Eliminate Black Bars**: Supports 16:9 Zoom/Cover and Stretch modes for smartwatches (1:1) and tall phones (20:9).
+            - **Direct Media Beaming**: Stream 1080p/4K videos and photos directly to your TV.
+            - **No TV APK Required**: Works on Samsung Tizen, LG webOS, Android TV, Fire TV, and PC via TV Web Receiver or DLNA.
+            - **File Sharing**: Over-the-air file download and sharing.
           files: release-output/Cast16x9-FullTV-ScreenMirror.apk
-          name: Cast16x9 Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
