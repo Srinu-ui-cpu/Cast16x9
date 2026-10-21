@@ -151,12 +151,13 @@ class DlnaManager(private val context: Context) {
     }
 
     /**
-     * Commands the DLNA TV to play a video/photo directly via UPnP SOAP call.
+     * Commands the DLNA TV to play a video/photo directly via UPnP SOAP call with dynamic MIME type.
      */
     suspend fun playMediaOnDlnaTv(
         device: DlnaDevice,
         mediaUrl: String,
-        title: String
+        title: String,
+        mimeType: String = "video/mp4"
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             // Step 1: SetAVTransportURI
@@ -167,7 +168,7 @@ class DlnaManager(private val context: Context) {
                         <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
                             <InstanceID>0</InstanceID>
                             <CurrentURI>$mediaUrl</CurrentURI>
-                            <CurrentURIMetaData>&lt;DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"&gt;&lt;item id="0" parentID="-1" restricted="1"&gt;&lt;dc:title&gt;$title&lt;/dc:title&gt;&lt;res protocolInfo="http-get:*:video/mp4:*"&gt;$mediaUrl&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
+                            <CurrentURIMetaData>&lt;DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"&gt;&lt;item id="0" parentID="-1" restricted="1"&gt;&lt;dc:title&gt;$title&lt;/dc:title&gt;&lt;res protocolInfo="http-get:*:$mimeType:*"&gt;$mediaUrl&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
                         </u:SetAVTransportURI>
                     </s:Body>
                 </s:Envelope>

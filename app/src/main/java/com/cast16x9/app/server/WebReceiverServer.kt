@@ -64,7 +64,7 @@ class WebReceiverServer(
                     val fileId = uri.removePrefix("/files/download/")
                     val file = sharedFiles.find { it.id == fileId }
                     if (file != null) {
-                        return serveStreamableMedia(file.uri, file.mimeType, session, file.name)
+                        return serveStreamableMedia(file.uri, file.mimeType, session, file.name, isAttachment = true)
                     }
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "File not found")
                 }
@@ -124,10 +124,12 @@ class WebReceiverServer(
         contentUri: Uri,
         mimeType: String,
         session: IHTTPSession,
-        filename: String?
+        filename: String?,
+        isAttachment: Boolean = false
     ): Response {
         val cr = context.contentResolver
         val fileLength = cr.openAssetFileDescriptor(contentUri, "r")?.use { it.length } ?: -1L
+        val dispositionType = if (isAttachment) "attachment" else "inline"
 
         val rangeHeader = session.headers["range"]
         if (rangeHeader != null && rangeHeader.startsWith("bytes=") && fileLength > 0) {
@@ -160,7 +162,7 @@ class WebReceiverServer(
             response.addHeader("Content-Range", "bytes $start-$end/$fileLength")
             response.addHeader("Accept-Ranges", "bytes")
             if (filename != null) {
-                response.addHeader("Content-Disposition", "inline; filename=\"$filename\"")
+                response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
             }
             return response
         }
@@ -176,7 +178,7 @@ class WebReceiverServer(
         }
         response.addHeader("Accept-Ranges", "bytes")
         if (filename != null) {
-            response.addHeader("Content-Disposition", "inline; filename=\"$filename\"")
+            response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
         }
         return response
     }

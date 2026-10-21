@@ -65,6 +65,35 @@ Cast16x9/
 
 ---
 
+## 🧪 Automated & Manual Testing Agent
+
+The project includes an integrated **Autonomous Quality Assurance and Testing Suite**:
+
+### 1. Automated Regression & Diagnostic Test Suite
+Runs in under 2 seconds and verifies all 5 subsystems:
+* Static frontend integrity & TV remote key bindings
+* 16:9 transformation math (Smartwatches 1:1, Phones 20:9, 16:9)
+* HTTP Range seeking (206 Partial Content) & File sharing
+* WebSocket handshake, binary frame delivery & remote commands
+* DLNA SSDP discovery & dynamic MIME UPnP SOAP envelopes
+
+```bash
+# Run the automated test suite
+node test-suite/run-tests.js
+```
+
+### 2. Interactive Manual Testing Server
+Launches a simulated local TV Web Receiver server so you can test all features and UI buttons directly on your PC or TV browser:
+```bash
+node test-suite/run-tests.js --serve
+```
+Then open `http://localhost:8080` in any web browser to test 16:9 aspect switching, HTML5 video player, and file downloads.
+
+### 3. Self-Healing QA Subagent (`test-and-repair-agent`)
+Configured to autonomously run diagnostics, detect protocol or rendering failures, patch source code, and re-verify builds.
+
+---
+
 ## ☁️ Automated GitHub APK Build & Hosting
 
 This repository includes a GitHub Actions workflow (`.github/workflows/build-apk.yml`).

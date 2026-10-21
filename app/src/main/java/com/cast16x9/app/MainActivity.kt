@@ -301,7 +301,7 @@ class MainActivity : AppCompatActivity() {
         val mediaStreamUrl = "http://$ip:${NetworkUtils.DEFAULT_HTTP_PORT}/media/active"
 
         lifecycleScope.launch {
-            val success = dlnaManager.playMediaOnDlnaTv(device, mediaStreamUrl, item.title)
+            val success = dlnaManager.playMediaOnDlnaTv(device, mediaStreamUrl, item.title, item.mimeType)
             if (success) {
                 Toast.makeText(this@MainActivity, "Playing on ${device.friendlyName}", Toast.LENGTH_SHORT).show()
             } else {

@@ -1,0 +1,19 @@
+{
+  "name": "cast16x9-test-suite",
+  "version": "1.0.0",
+  "description": "Automated and manual diagnostic test harness for Cast16x9",
+  "scripts": {
+    "test": "node test-suite/run-tests.js",
+    "test:manual": "node test-suite/run-tests.js --manual",
+    "serve": "node test-suite/run-tests.js --serve"
+  },
+  "keywords": [
+    "screenshare",
+    "16x9",
+    "dlna",
+    "webreceiver",
+    "testing"
+  ],
+  "author": "Cast16x9 Team",
+  "license": "Apache-2.0"
+}

@@ -148,19 +148,57 @@
         };
     }
 
-    // Render binary frame to canvas / screen
+    // Render binary frame to canvas / screen with mathematical 16:9 aspect ratio scaling
     function renderScreenFrame(blob) {
         mirrorPlaceholder.classList.add('hidden');
 
         const url = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = function () {
-            // Resize canvas to match incoming frame
-            if (canvas.width !== img.width || canvas.height !== img.height) {
-                canvas.width = img.width;
-                canvas.height = img.height;
+            const targetWidth = window.innerWidth || 1920;
+            const targetHeight = window.innerHeight || 1080;
+
+            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
             }
-            ctx.drawImage(img, 0, 0);
+
+            const srcAspect = img.width / img.height;
+            const tvAspect = targetWidth / targetHeight;
+
+            if (aspectMode === 'stretch') {
+                // 16:9 Stretch (No black bars, edge-to-edge)
+                ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+            } else if (aspectMode === 'cover') {
+                // 16:9 Cover / Zoom (No black bars, maintains natural proportions)
+                let dw, dh;
+                if (srcAspect > tvAspect) {
+                    dh = targetHeight;
+                    dw = targetHeight * srcAspect;
+                } else {
+                    dw = targetWidth;
+                    dh = targetWidth / srcAspect;
+                }
+                const dx = (targetWidth - dw) / 2;
+                const dy = (targetHeight - dh) / 2;
+                ctx.drawImage(img, dx, dy, dw, dh);
+            } else {
+                // Fit / Original (contain)
+                let dw, dh;
+                if (srcAspect > tvAspect) {
+                    dw = targetWidth;
+                    dh = targetWidth / srcAspect;
+                } else {
+                    dh = targetHeight;
+                    dw = targetHeight * srcAspect;
+                }
+                const dx = (targetWidth - dw) / 2;
+                const dy = (targetHeight - dh) / 2;
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, targetWidth, targetHeight);
+                ctx.drawImage(img, dx, dy, dw, dh);
+            }
+
             URL.revokeObjectURL(url);
         };
         img.src = url;
@@ -197,9 +235,13 @@
         videoPlayer.classList.remove('hidden');
 
         videoPlayer.src = url;
-        videoPlayer.play().catch(err => {
-            console.warn('Autoplay blocked, requesting user interaction:', err);
-        });
+        const playPromise = videoPlayer.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(err => {
+                console.warn('Autoplay blocked by TV browser policy:', err);
+                showHUD('Press OK / Play on TV Remote to start video');
+            });
+        }
 
         showHUD(`Playing: ${title || 'Video'}`);
     }
