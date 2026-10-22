@@ -38,6 +38,7 @@
     const cachingStats = document.getElementById('caching-stats');
     const btnPlayLive = document.getElementById('btn-play-live');
     const btnCancelVideo = document.getElementById('btn-cancel-video');
+    const btnCancelCaching = document.getElementById('btn-cancel-caching');
 
     const filesGrid = document.getElementById('files-grid');
     const btnRefreshFiles = document.getElementById('btn-refresh-files');
@@ -344,8 +345,10 @@
     const inMemoryMediaCache = new Map();
     let currentDownloadAbort = null;
     let activeBlobUrl = null;
+    let dbInstance = null;
 
     function openDB() {
+        if (dbInstance) return Promise.resolve(dbInstance);
         return new Promise((resolve) => {
             if (!window.indexedDB) {
                 resolve(null);
@@ -360,7 +363,9 @@
                     }
                 };
                 req.onsuccess = function (e) {
-                    resolve(e.target.result);
+                    dbInstance = e.target.result;
+                    dbInstance.onclose = () => { dbInstance = null; };
+                    resolve(dbInstance);
                 };
                 req.onerror = function () {
                     resolve(null);
@@ -438,30 +443,45 @@
 
     async function clearAllMediaCache() {
         inMemoryMediaCache.clear();
+        if (activeBlobUrl) {
+            try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+            activeBlobUrl = null;
+        }
+
         const db = await openDB();
         if (db) {
-            try {
-                const tx = db.transaction(STORE_NAME, 'readwrite');
-                const store = tx.objectStore(STORE_NAME);
-                store.clear();
-            } catch (e) {}
+            await new Promise((resolve) => {
+                try {
+                    const tx = db.transaction(STORE_NAME, 'readwrite');
+                    const store = tx.objectStore(STORE_NAME);
+                    const req = store.clear();
+                    req.onsuccess = () => resolve(true);
+                    req.onerror = () => resolve(false);
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                } catch (e) {
+                    resolve(false);
+                }
+            });
         }
         if (window.caches) {
             try {
                 const keys = await caches.keys();
-                for (let k of keys) await caches.delete(k);
+                for (let k of keys) {
+                    try { await caches.delete(k); } catch (e) {}
+                }
             } catch (e) {}
         }
     }
 
-    function cancelActiveMedia(notifyServer = true) {
+    async function cancelActiveMedia(notifyServer = true) {
         // 1. Abort any background downloading stream
         if (currentDownloadAbort) {
-            currentDownloadAbort.abort();
+            try { currentDownloadAbort.abort(); } catch (e) {}
             currentDownloadAbort = null;
         }
 
-        // 2. Stop and release video player completely
+        // 2. Stop and release video player completely & reclaim RAM immediately
         if (videoPlayer) {
             videoPlayer.pause();
             if (activeBlobUrl) {
@@ -484,21 +504,33 @@
         if (btnCancelVideo) btnCancelVideo.classList.add('hidden');
         if (mediaPlaceholder) mediaPlaceholder.classList.remove('hidden');
 
-        // 5. Completely wipe video from TV database and cache
-        clearAllMediaCache();
+        // 5. Completely wipe video from TV database and cache to free space for next video
+        await clearAllMediaCache();
 
-        // 6. Notify phone server
-        if (notifyServer && ws && ws.readyState === WebSocket.OPEN) {
+        // 6. Notify phone server via WebSocket and fallback HTTP endpoint
+        if (notifyServer) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                try {
+                    ws.send(JSON.stringify({ action: 'media_cancelled' }));
+                } catch (e) {}
+            }
             try {
-                ws.send(JSON.stringify({ action: 'media_cancelled' }));
+                fetch('/api/media/cancel?t=' + Date.now()).catch(() => {});
             } catch (e) {}
         }
 
-        showHUD('⏹ Video Canceled & Storage Cleared');
+        showHUD('🗑️ Video Canceled & TV Storage Freed');
     }
 
     if (btnCancelVideo) {
         btnCancelVideo.addEventListener('click', function (e) {
+            e.stopPropagation();
+            cancelActiveMedia(true);
+        });
+    }
+
+    if (btnCancelCaching) {
+        btnCancelCaching.addEventListener('click', function (e) {
             e.stopPropagation();
             cancelActiveMedia(true);
         });
@@ -805,8 +837,9 @@
 
     // 8. TV Remote Control Key Handling (16:9 Aspect, Smooth 4K Seeking, & Audio Controls)
     window.addEventListener('keydown', function (e) {
-        // TV Remote Seeking & Playback Shortcuts
-        if (activeTab === 'media' && videoPlayer && !videoPlayer.classList.contains('hidden')) {
+        // TV Remote Seeking & Playback Shortcuts (Active during playback or caching)
+        const isMediaActive = activeTab === 'media' && ((videoPlayer && !videoPlayer.classList.contains('hidden')) || (cachingHud && !cachingHud.classList.contains('hidden')));
+        if (isMediaActive) {
             switch (e.key) {
                 case 'ArrowRight':
                 case 'l':
@@ -833,6 +866,7 @@
                 case 'Backspace':
                 case 'c':
                 case 'C':
+                case '0':
                     e.preventDefault();
                     cancelActiveMedia(true);
                     return;

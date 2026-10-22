@@ -37,6 +37,7 @@ class WebReceiverServer(
     @Volatile var currentMediaUri: Uri? = null
     @Volatile var currentMediaMimeType: String? = null
     @Volatile var currentMediaTitle: String? = null
+    var onMediaCancelledListener: (() -> Unit)? = null
 
     override fun openWebSocket(handshake: IHTTPSession): WebSocket {
         return ScreenWebSocket(handshake)
@@ -117,6 +118,18 @@ class WebReceiverServer(
                         return serveStreamableMedia(activeUri, mime, session, currentMediaTitle, isAttachment = false)
                     }
                     return withCors(newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "No active media"))
+                }
+
+                // 8. Cancel Active Media Stream & Clear Cache Endpoint
+                uri.startsWith("/api/media/cancel") -> {
+                    stopCastingMedia()
+                    val response = newFixedLengthResponse(
+                        Response.Status.OK,
+                        "application/json",
+                        "{\"status\":\"cancelled\",\"freed\":true,\"message\":\"Media stopped and cache cleared\"}"
+                    )
+                    response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+                    return withCors(response)
                 }
 
                 else -> {
@@ -456,8 +469,10 @@ class WebReceiverServer(
         val json = JSONObject().apply {
             put("action", "stop_media")
             put("clearCache", true)
+            put("deleteFromDb", true)
         }
         sendControlCommand(json)
+        onMediaCancelledListener?.invoke()
     }
 
     fun setMirroringState(active: Boolean) {
@@ -515,6 +530,7 @@ class WebReceiverServer(
                 currentMediaUri = null
                 currentMediaTitle = null
                 currentMediaMimeType = null
+                onMediaCancelledListener?.invoke()
             }
         }
 

@@ -66,6 +66,7 @@ function testStaticAssets() {
     assert(htmlContent.includes('id="caching-progress-bar"'), 'index.html contains Caching progress bar');
     assert(htmlContent.includes('id="btn-play-live"'), 'index.html contains Play Live (Skip Cache) button');
     assert(htmlContent.includes('id="btn-cancel-video"'), 'index.html contains Cancel / Close Video button');
+    assert(htmlContent.includes('id="btn-cancel-caching"'), 'index.html contains Cancel Video button in caching HUD');
 
     const cssContent = fs.readFileSync(cssPath, 'utf8');
     assert(cssContent.includes('.aspect-cover'), 'CSS contains .aspect-cover class');
@@ -74,6 +75,7 @@ function testStaticAssets() {
     assert(cssContent.includes('.caching-hud'), 'CSS contains .caching-hud 4K database styling');
     assert(cssContent.includes('.caching-progress-bar'), 'CSS contains .caching-progress-bar styling');
     assert(cssContent.includes('.btn-cancel-video'), 'CSS contains .btn-cancel-video close styling');
+    assert(cssContent.includes('.btn-cancel-caching'), 'CSS contains .btn-cancel-caching HUD button styling');
     assert(cssContent.includes('100vw') && cssContent.includes('100vh'), 'CSS enforces 100vw/100vh full-screen rules');
 
     const jsContent = fs.readFileSync(jsPath, 'utf8');
@@ -83,11 +85,13 @@ function testStaticAssets() {
     assert(jsContent.includes('unmuteAudio'), 'app.js implements unmuteAudio() for TV browser sound policy');
     assert(jsContent.includes('renderBlobFrame'), 'app.js implements low-latency renderBlobFrame() with memory leak prevention');
     assert(jsContent.includes('Cast16x9_MediaDB'), 'app.js implements Cast16x9_MediaDB IndexedDB storage');
+    assert(jsContent.includes('dbInstance'), 'app.js implements singleton dbInstance connection');
     assert(jsContent.includes('getCachedMedia'), 'app.js implements getCachedMedia() for 0ms glitch-free seeking');
     assert(jsContent.includes('saveMediaToCache'), 'app.js implements saveMediaToCache()');
     assert(jsContent.includes('playFromBlob'), 'app.js implements playFromBlob() for local 4K playback');
     assert(jsContent.includes('cancelActiveMedia'), 'app.js implements cancelActiveMedia() for TV cancel button');
     assert(jsContent.includes('clearAllMediaCache'), 'app.js implements clearAllMediaCache() to wipe TV DB on cancel/change');
+    assert(jsContent.includes('/api/media/cancel'), 'app.js triggers /api/media/cancel fallback on cancel');
     assert(jsContent.includes('keydown'), 'app.js listens to TV remote key events (1, 2, 3, etc.)');
 
     // Android Layout & Server Verification for Changing/Canceling Cast
@@ -100,6 +104,8 @@ function testStaticAssets() {
     const serverPath = path.join(JAVA_DIR, 'server', 'WebReceiverServer.kt');
     const serverContent = fs.readFileSync(serverPath, 'utf8');
     assert(serverContent.includes('stopCastingMedia'), 'WebReceiverServer implements stopCastingMedia()');
+    assert(serverContent.includes('/api/media/cancel'), 'WebReceiverServer routes /api/media/cancel');
+    assert(serverContent.includes('onMediaCancelledListener'), 'WebReceiverServer provides onMediaCancelledListener callback');
     assert(serverContent.includes('clearPreviousCache'), 'WebReceiverServer sends clearPreviousCache on new video beam');
 }
 
@@ -251,6 +257,16 @@ async function testServerProtocols() {
             return;
         }
 
+        // Cancel Active Media & Reclaim Space API
+        if (url.startsWith('/api/media/cancel')) {
+            res.writeHead(200, {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store'
+            });
+            res.end(JSON.stringify({ status: 'cancelled', freed: true }));
+            return;
+        }
+
         res.writeHead(404);
         res.end('Not Found');
     });
@@ -281,6 +297,12 @@ async function testServerProtocols() {
         const resDownload = await makeRequest('http://127.0.0.1:9876/files/download/file-01');
         assert(resDownload.statusCode === 200, 'File download returns 200 OK');
         assert(resDownload.headers['content-disposition'].includes('attachment; filename="Document.pdf"'), 'File download includes Content-Disposition attachment header');
+
+        // Request 5: Cancel active media & reclaim TV storage API
+        const resCancel = await makeRequest('http://127.0.0.1:9876/api/media/cancel');
+        assert(resCancel.statusCode === 200, 'HTTP GET /api/media/cancel returns 200 OK');
+        const cancelJson = JSON.parse(resCancel.body);
+        assert(cancelJson.status === 'cancelled' && cancelJson.freed === true, '/api/media/cancel confirms media cancelled and TV storage freed');
 
     } finally {
         await new Promise((resolve) => server.close(resolve));

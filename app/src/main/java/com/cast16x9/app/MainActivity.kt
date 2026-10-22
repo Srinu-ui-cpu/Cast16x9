@@ -97,6 +97,11 @@ class MainActivity : AppCompatActivity() {
     private fun startEmbeddedServer() {
         try {
             webServer = WebReceiverServer(this, NetworkUtils.DEFAULT_HTTP_PORT)
+            webServer?.onMediaCancelledListener = {
+                runOnUiThread {
+                    binding.cardActiveCast.visibility = View.GONE
+                }
+            }
             webServer?.start()
             ScreenCaptureService.serverInstance = webServer
 
@@ -154,13 +159,13 @@ class MainActivity : AppCompatActivity() {
         binding.btnStopCast.setOnClickListener {
             webServer?.stopCastingMedia()
             binding.cardActiveCast.visibility = View.GONE
-            Toast.makeText(this, "Casting canceled. Video cleared from TV database.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Media beam canceled. TV storage & memory freed.", Toast.LENGTH_SHORT).show()
         }
 
         binding.btnChangeVideo.setOnClickListener {
             webServer?.stopCastingMedia()
             binding.cardActiveCast.visibility = View.GONE
-            Toast.makeText(this, "Tap any video below to cast freshly to TV", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Select any video below to beam freshly to TV", Toast.LENGTH_SHORT).show()
         }
     }
 
