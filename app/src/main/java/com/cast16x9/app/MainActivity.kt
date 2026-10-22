@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
             webServer?.start()
             ScreenCaptureService.serverInstance = webServer
 
-            val ip = NetworkUtils.getLocalIpAddress()
+            val ip = NetworkUtils.getLocalIpAddress(this)
             val url = "http://$ip:${NetworkUtils.DEFAULT_HTTP_PORT}"
             binding.tvReceiverUrl.text = url
 

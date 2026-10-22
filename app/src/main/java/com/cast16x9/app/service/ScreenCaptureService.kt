@@ -97,9 +97,13 @@ class ScreenCaptureService : Service() {
         val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = mpManager.getMediaProjection(resultCode, resultData)
 
-        // Scale resolution for smooth Wi-Fi transmission (capped at 1280x720 or similar for optimal frame rate)
-        val captureWidth = if (width > 1280) 1280 else width
-        val captureHeight = (height * (captureWidth.toFloat() / width)).toInt()
+        // Scale resolution for smooth Wi-Fi transmission (aligned to even pixel boundaries)
+        var cWidth = if (width > 1280) 1280 else width
+        var cHeight = (height * (cWidth.toFloat() / width)).toInt()
+        if (cWidth % 2 != 0) cWidth--
+        if (cHeight % 2 != 0) cHeight--
+        val captureWidth = cWidth
+        val captureHeight = cHeight
 
         imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 3)
 
@@ -115,6 +119,7 @@ class ScreenCaptureService : Service() {
         )
 
         isCapturing = true
+        serverInstance?.setMirroringState(true)
 
         imageReader?.setOnImageAvailableListener({ reader ->
             val now = System.currentTimeMillis()
@@ -153,8 +158,8 @@ class ScreenCaptureService : Service() {
                 croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos)
                 val frameBytes = baos.toByteArray()
 
-                // Broadcast to TV web receiver
-                serverInstance?.broadcastScreenFrame(frameBytes)
+                // Broadcast to TV web receiver buffer and clients
+                serverInstance?.onNewScreenFrame(frameBytes)
 
                 if (croppedBitmap != bitmap) {
                     croppedBitmap.recycle()
@@ -170,6 +175,7 @@ class ScreenCaptureService : Service() {
 
     private fun stopCapture() {
         isCapturing = false
+        serverInstance?.setMirroringState(false)
         try {
             imageReader?.setOnImageAvailableListener(null, null)
             imageReader?.close()

@@ -1,4 +1,4 @@
-// Cast16x9 TV Web Receiver Logic
+// Cast16x9 TV Web Receiver Logic v1.1.0
 (function () {
     'use strict';
 
@@ -7,13 +7,18 @@
     let aspectMode = 'cover'; // 'cover' (16:9 zoom no bars), 'stretch' (16:9 fill no bars), 'fit' (contain)
     let ws = null;
     let reconnectTimer = null;
+    let pingInterval = null;
+    let statusSyncInterval = null;
     let hudTimer = null;
+    let isMirroringActive = false;
+    let usePollingFallback = false;
+    let pollTimer = null;
 
     // DOM Elements
     const statusBadge = document.getElementById('connection-status');
     const mirrorWrapper = document.getElementById('mirror-wrapper');
+    const screenStream = document.getElementById('screen-stream');
     const canvas = document.getElementById('screen-canvas');
-    const fallbackImg = document.getElementById('screen-fallback');
     const mirrorPlaceholder = document.getElementById('mirror-placeholder');
     const activeModeName = document.getElementById('active-mode-name');
     const hudOverlay = document.getElementById('hud-overlay');
@@ -58,7 +63,6 @@
         }
     }
 
-    // Bind tab clicks
     Object.keys(tabs).forEach(key => {
         tabs[key].btn.addEventListener('click', () => switchTab(key));
     });
@@ -68,7 +72,6 @@
         aspectMode = mode;
         mirrorWrapper.className = `aspect-${mode}`;
 
-        // Update active button state
         Object.keys(modeButtons).forEach(m => {
             modeButtons[m].classList.toggle('active', m === mode);
         });
@@ -97,31 +100,134 @@
         }, 3000);
     }
 
-    // Bind mode buttons
     Object.keys(modeButtons).forEach(mode => {
         modeButtons[mode].addEventListener('click', () => setAspectMode(mode));
     });
 
-    // 3. WebSocket Connection for Live Screen Stream and Remote Commands
+    // 3. Screen Mirror Stream Management (Hardware-Accelerated Dual Pipeline)
+    function startScreenStream() {
+        if (isMirroringActive) return;
+        isMirroringActive = true;
+        mirrorPlaceholder.classList.add('hidden');
+
+        if (!usePollingFallback) {
+            // Hardware-accelerated continuous MJPEG stream
+            screenStream.classList.remove('hidden');
+            screenStream.src = `/stream.mjpg?t=${Date.now()}`;
+
+            screenStream.onerror = function () {
+                console.warn('MJPEG stream error or unsupported, switching to polling fallback...');
+                usePollingFallback = true;
+                screenStream.classList.add('hidden');
+                startFramePolling();
+            };
+        } else {
+            startFramePolling();
+        }
+    }
+
+    function stopScreenStream() {
+        isMirroringActive = false;
+        screenStream.src = '';
+        screenStream.classList.add('hidden');
+        canvas.classList.add('hidden');
+        mirrorPlaceholder.classList.remove('hidden');
+        clearTimeout(pollTimer);
+    }
+
+    function startFramePolling() {
+        canvas.classList.remove('hidden');
+
+        function fetchNext() {
+            if (!isMirroringActive) return;
+            const img = new Image();
+            img.onload = function () {
+                drawFrameToCanvas(img);
+                pollTimer = setTimeout(fetchNext, 33); // ~30 fps
+            };
+            img.onerror = function () {
+                pollTimer = setTimeout(fetchNext, 100);
+            };
+            img.src = `/api/frame?t=${Date.now()}`;
+        }
+        fetchNext();
+    }
+
+    function drawFrameToCanvas(img) {
+        const targetWidth = window.innerWidth || 1920;
+        const targetHeight = window.innerHeight || 1080;
+
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+        }
+
+        const srcAspect = img.width / img.height;
+        const tvAspect = targetWidth / targetHeight;
+
+        if (aspectMode === 'stretch') {
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        } else if (aspectMode === 'cover') {
+            let dw, dh;
+            if (srcAspect > tvAspect) {
+                dh = targetHeight;
+                dw = targetHeight * srcAspect;
+            } else {
+                dw = targetWidth;
+                dh = targetWidth / srcAspect;
+            }
+            const dx = (targetWidth - dw) / 2;
+            const dy = (targetHeight - dh) / 2;
+            ctx.drawImage(img, dx, dy, dw, dh);
+        } else {
+            let dw, dh;
+            if (srcAspect > tvAspect) {
+                dw = targetWidth;
+                dh = targetWidth / srcAspect;
+            } else {
+                dh = targetHeight;
+                dw = targetHeight * srcAspect;
+            }
+            const dx = (targetWidth - dw) / 2;
+            const dy = (targetHeight - dh) / 2;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, targetWidth, targetHeight);
+            ctx.drawImage(img, dx, dy, dw, dh);
+        }
+    }
+
+    // 4. Rock-Solid WebSocket Connection for Signaling & Remote Commands
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         const wsUrl = `${protocol}//${host}/ws/screen`;
 
-        console.log(`Connecting to WebSocket at ${wsUrl}...`);
-        ws = new WebSocket(wsUrl);
-        ws.binaryType = 'blob';
+        try {
+            ws = new WebSocket(wsUrl);
+        } catch (e) {
+            console.error('Failed to create WebSocket:', e);
+            scheduleReconnect();
+            return;
+        }
 
         ws.onopen = function () {
-            console.log('Connected to Cast16x9 phone/smartwatch stream!');
+            console.log('Connected to Cast16x9 signaling server!');
             statusBadge.textContent = 'Connected (Live)';
             statusBadge.className = 'badge badge-connected';
             clearTimeout(reconnectTimer);
+
+            // Start heartbeat ping
+            clearInterval(pingInterval);
+            pingInterval = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send('ping');
+                }
+            }, 10000);
         };
 
         ws.onmessage = function (event) {
             if (typeof event.data === 'string') {
-                // JSON Control message from Phone App
+                if (event.data === 'pong') return;
                 try {
                     const message = JSON.parse(event.data);
                     handleControlMessage(message);
@@ -129,85 +235,58 @@
                     console.error('Invalid JSON message:', event.data);
                 }
             } else if (event.data instanceof Blob) {
-                // Incoming Screen Frame (JPEG / PNG / WebP)
-                renderScreenFrame(event.data);
+                // If binary frame is sent via WebSocket
+                if (!isMirroringActive) startScreenStream();
+                const url = URL.createObjectURL(event.data);
+                const img = new Image();
+                img.onload = function () {
+                    drawFrameToCanvas(img);
+                    URL.revokeObjectURL(url);
+                };
+                img.src = url;
             }
         };
 
         ws.onclose = function () {
-            console.log('Stream disconnected. Reconnecting in 3s...');
-            statusBadge.textContent = 'Disconnected (Reconnecting...)';
+            console.log('Signaling stream disconnected. Reconnecting in 3s...');
+            statusBadge.textContent = 'Reconnecting...';
             statusBadge.className = 'badge badge-disconnected';
-            mirrorPlaceholder.classList.remove('hidden');
-            reconnectTimer = setTimeout(connectWebSocket, 3000);
+            clearInterval(pingInterval);
+            scheduleReconnect();
         };
 
         ws.onerror = function (err) {
             console.error('WebSocket Error:', err);
-            ws.close();
+            try { ws.close(); } catch (e) {}
         };
     }
 
-    // Render binary frame to canvas / screen with mathematical 16:9 aspect ratio scaling
-    function renderScreenFrame(blob) {
-        mirrorPlaceholder.classList.add('hidden');
-
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = function () {
-            const targetWidth = window.innerWidth || 1920;
-            const targetHeight = window.innerHeight || 1080;
-
-            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-                canvas.width = targetWidth;
-                canvas.height = targetHeight;
-            }
-
-            const srcAspect = img.width / img.height;
-            const tvAspect = targetWidth / targetHeight;
-
-            if (aspectMode === 'stretch') {
-                // 16:9 Stretch (No black bars, edge-to-edge)
-                ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-            } else if (aspectMode === 'cover') {
-                // 16:9 Cover / Zoom (No black bars, maintains natural proportions)
-                let dw, dh;
-                if (srcAspect > tvAspect) {
-                    dh = targetHeight;
-                    dw = targetHeight * srcAspect;
-                } else {
-                    dw = targetWidth;
-                    dh = targetWidth / srcAspect;
-                }
-                const dx = (targetWidth - dw) / 2;
-                const dy = (targetHeight - dh) / 2;
-                ctx.drawImage(img, dx, dy, dw, dh);
-            } else {
-                // Fit / Original (contain)
-                let dw, dh;
-                if (srcAspect > tvAspect) {
-                    dw = targetWidth;
-                    dh = targetWidth / srcAspect;
-                } else {
-                    dh = targetHeight;
-                    dw = targetHeight * srcAspect;
-                }
-                const dx = (targetWidth - dw) / 2;
-                const dy = (targetHeight - dh) / 2;
-                ctx.fillStyle = '#000000';
-                ctx.fillRect(0, 0, targetWidth, targetHeight);
-                ctx.drawImage(img, dx, dy, dw, dh);
-            }
-
-            URL.revokeObjectURL(url);
-        };
-        img.src = url;
+    function scheduleReconnect() {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connectWebSocket, 3000);
     }
 
-    // Handle remote commands sent from phone app
+    // Handle incoming commands
     function handleControlMessage(msg) {
         console.log('Received remote command:', msg);
         switch (msg.action) {
+            case 'init_state':
+                if (msg.aspectMode) setAspectMode(msg.aspectMode, false);
+                if (msg.isMirroring) startScreenStream();
+                if (msg.hasMedia && msg.mediaUrl) {
+                    switchTab('media');
+                    if (msg.isVideo) playVideoOnTV(msg.mediaUrl, msg.mediaTitle);
+                    else showPhotoOnTV(msg.mediaUrl, msg.mediaTitle);
+                }
+                break;
+            case 'mirror_state':
+                if (msg.active) {
+                    switchTab('mirror');
+                    startScreenStream();
+                } else {
+                    stopScreenStream();
+                }
+                break;
             case 'set_aspect':
                 if (msg.mode) setAspectMode(msg.mode);
                 break;
@@ -228,7 +307,7 @@
         }
     }
 
-    // 4. Media Player Handling (Direct 16:9 full TV screen playback)
+    // 5. Media Player Handling (Native 16:9 full TV screen playback)
     function playVideoOnTV(url, title) {
         photoViewer.classList.add('hidden');
         mediaPlaceholder.classList.add('hidden');
@@ -266,7 +345,33 @@
         }
     }
 
-    // 5. File Sharing Portal
+    // 6. State Synchronization Safety Net (Polls /api/status)
+    function syncServerStatus() {
+        fetch('/api/status')
+            .then(res => res.json())
+            .then(data => {
+                if (data.isMirroring && !isMirroringActive) {
+                    console.log('Mirroring detected active from status API!');
+                    startScreenStream();
+                } else if (!data.isMirroring && isMirroringActive) {
+                    stopScreenStream();
+                }
+
+                if (data.aspectMode && data.aspectMode !== aspectMode) {
+                    setAspectMode(data.aspectMode, false);
+                }
+
+                if (data.hasMedia && data.activeMedia && videoPlayer.paused && videoPlayer.classList.contains('hidden')) {
+                    if (data.activeMedia.isVideo) {
+                        switchTab('media');
+                        playVideoOnTV(data.activeMedia.url, data.activeMedia.title);
+                    }
+                }
+            })
+            .catch(() => {});
+    }
+
+    // 7. File Sharing Portal
     function loadSharedFiles() {
         filesGrid.innerHTML = '<div class="loading-spinner">Fetching files from phone...</div>';
 
@@ -302,7 +407,6 @@
                     filesGrid.appendChild(card);
                 });
 
-                // Attach play button listeners
                 document.querySelectorAll('.btn-play').forEach(btn => {
                     btn.addEventListener('click', function () {
                         const url = this.getAttribute('data-url');
@@ -345,42 +449,29 @@
         return div.innerHTML;
     }
 
-    // 6. TV Remote Control Key Handling (Keyboard / D-Pad)
+    // 8. TV Remote Control Key Handling
     window.addEventListener('keydown', function (e) {
         switch (e.key) {
-            case '1':
-                setAspectMode('cover');
-                break;
-            case '2':
-                setAspectMode('stretch');
-                break;
-            case '3':
-                setAspectMode('fit');
-                break;
+            case '1': setAspectMode('cover'); break;
+            case '2': setAspectMode('stretch'); break;
+            case '3': setAspectMode('fit'); break;
             case 'f':
-            case 'F':
-                toggleFullscreen();
-                break;
+            case 'F': toggleFullscreen(); break;
         }
     });
 
     function toggleFullscreen() {
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => console.log(err));
+            document.documentElement.requestFullscreen().catch(() => {});
         } else {
-            document.exitFullscreen().catch(err => console.log(err));
+            document.exitFullscreen().catch(() => {});
         }
     }
 
-    // Auto-enter fullscreen on first click/remote press
-    document.addEventListener('click', function () {
-        if (!document.fullscreenElement && window.innerHeight < screen.height - 20) {
-            document.documentElement.requestFullscreen().catch(() => {});
-        }
-    }, { once: true });
-
-    // Initialize
+    // Initial setup
     setAspectMode('cover', false);
     connectWebSocket();
+    syncServerStatus();
+    statusSyncInterval = setInterval(syncServerStatus, 4000);
 
 })();

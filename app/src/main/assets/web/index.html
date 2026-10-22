@@ -12,7 +12,7 @@
         <div class="brand">
             <span class="logo-icon">📺</span>
             <span class="brand-title">Cast<span class="highlight">16:9</span> TV Receiver</span>
-            <span id="connection-status" class="badge badge-disconnected">Waiting for Device</span>
+            <span id="connection-status" class="badge badge-disconnected">Connecting...</span>
         </div>
         <div class="nav-tabs" role="tablist">
             <button id="tab-mirror" class="nav-btn active" tabindex="1">📱 Screen Mirror</button>
@@ -28,16 +28,16 @@
         <!-- 1. Screen Mirroring Section -->
         <section id="section-mirror" class="view-section active">
             <div id="mirror-wrapper" class="aspect-cover">
-                <!-- Live Screen Stream Canvas & Image -->
-                <canvas id="screen-canvas"></canvas>
-                <img id="screen-fallback" alt="Live Screen Stream" />
+                <!-- Hardware-Accelerated 16:9 Live Screen Stream -->
+                <img id="screen-stream" class="hidden" alt="Live 16:9 Screen Stream" />
+                <canvas id="screen-canvas" class="hidden"></canvas>
 
                 <!-- Standby / Idle Card -->
                 <div id="mirror-placeholder" class="placeholder-card">
                     <div class="pulse-ring"></div>
                     <div class="icon-tv">📡</div>
                     <h2>Ready to Mirror Screen in Full 16:9</h2>
-                    <p>Open the <strong>Cast16x9 App</strong> on your Phone or Smartwatch and tap <strong>"Start Mirroring"</strong></p>
+                    <p>Open the <strong>Cast16x9 App</strong> on your Phone or Smartwatch and tap <strong>"Start Screen Mirroring"</strong></p>
                     <div class="mode-info-box">
                         <span>Active Mode: <strong id="active-mode-name">Cover / Zoom (16:9 No Black Bars)</strong></span>
                         <div class="btn-group">
@@ -48,7 +48,7 @@
                     </div>
                 </div>
 
-                <!-- Floating On-Screen Mode Switcher (Press 'M' or click to toggle) -->
+                <!-- Floating On-Screen Mode Switcher HUD -->
                 <div id="hud-overlay" class="hud hidden">
                     <span id="hud-text">16:9 Mode: Fullscreen Cover (No Black Bars)</span>
                 </div>
@@ -58,7 +58,7 @@
         <!-- 2. Media Player Section (Native 16:9 full screen playback) -->
         <section id="section-media" class="view-section">
             <div id="player-container">
-                <video id="tv-video-player" controls preload="auto" playsinline>
+                <video id="tv-video-player" controls preload="auto" playsinline class="hidden">
                     Your browser does not support HTML5 video.
                 </video>
                 <div id="photo-viewer" class="hidden">
@@ -67,7 +67,7 @@
                 <div id="media-placeholder" class="placeholder-card">
                     <div class="icon-tv">🎬</div>
                     <h2>No Media Playing</h2>
-                    <p>Select any Video or Photo in the Cast16x9 mobile app to play directly on TV in crystal-clear full screen.</p>
+                    <p>Select any Video or Photo in the Cast16x9 mobile app to play directly on TV in crystal-clear full screen, or open the File Sharing tab.</p>
                 </div>
             </div>
         </section>
@@ -105,11 +105,10 @@
                 <div class="remote-shortcuts">
                     <h3>🎮 TV Remote Shortcuts</h3>
                     <ul>
-                        <li><kbd>Left</kbd> / <kbd>Right</kbd>: Switch Tabs</li>
-                        <li><kbd>Enter / OK</kbd>: Select or Toggle Fullscreen</li>
                         <li><kbd>Key 1</kbd>: Switch to 16:9 Zoom (No Bars)</li>
                         <li><kbd>Key 2</kbd>: Switch to 16:9 Stretch (No Bars)</li>
                         <li><kbd>Key 3</kbd>: Switch to Original Fit</li>
+                        <li><kbd>Key F</kbd>: Toggle Fullscreen</li>
                     </ul>
                 </div>
             </div>
@@ -120,7 +119,7 @@
     <!-- Bottom Status Bar -->
     <footer id="tv-footer">
         <span id="footer-left">Press <kbd>1</kbd>, <kbd>2</kbd>, or <kbd>3</kbd> to change 16:9 display mode</span>
-        <span id="footer-right">Cast16x9 v1.0.0</span>
+        <span id="footer-right">Cast16x9 v1.1.0</span>
     </footer>
 
     <script src="app.js"></script>
