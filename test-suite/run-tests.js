@@ -107,12 +107,14 @@ function testStaticAssets() {
     assert(serverContent.includes('/api/media/cancel'), 'WebReceiverServer routes /api/media/cancel');
     assert(serverContent.includes('onMediaCancelledListener'), 'WebReceiverServer provides onMediaCancelledListener callback');
     assert(serverContent.includes('clearPreviousCache'), 'WebReceiverServer sends clearPreviousCache on new video beam');
-    assert(serverContent.includes('getMediaFileLength'), 'WebReceiverServer implements getMediaFileLength() with 5 fallback strategies');
+    assert(serverContent.includes('getMediaFileLength'), 'WebReceiverServer implements getMediaFileLength() with fallback strategies');
+    assert(serverContent.includes('Os.fstat'), 'WebReceiverServer implements direct Linux kernel fstat 64-bit size detection');
     assert(serverContent.includes('Method.HEAD'), 'WebReceiverServer handles HTTP HEAD request probing');
     assert(serverContent.includes('RandomAccessFile'), 'WebReceiverServer implements RandomAccessFile hardware O(1) seek pipeline');
     assert(serverContent.includes('Access-Control-Expose-Headers'), 'WebReceiverServer exposes CORS Range & Length headers');
     assert(jsContent.includes('seeking'), 'app.js handles TV video seeking event');
     assert(jsContent.includes('seeked'), 'app.js handles TV video seeked auto-resume');
+    assert(jsContent.includes('isAlreadyActive'), 'app.js protects active playback from init_state restart to 00:00');
 }
 
 // =========================================================================

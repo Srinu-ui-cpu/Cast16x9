@@ -301,9 +301,14 @@
                 if (msg.aspectMode) setAspectMode(msg.aspectMode, false);
                 if (msg.isMirroring) startScreenStream();
                 if (msg.hasMedia && msg.mediaUrl) {
-                    switchTab('media');
-                    if (msg.isVideo) playVideoOnTV(msg.mediaUrl, msg.mediaTitle);
-                    else showPhotoOnTV(msg.mediaUrl, msg.mediaTitle);
+                    // CRITICAL GUARD: Never reload or interrupt video if it is already loaded or playing!
+                    const currentSrc = videoPlayer ? (videoPlayer.currentSrc || videoPlayer.src || '') : '';
+                    const isAlreadyActive = currentSrc.includes('media/active') && !videoPlayer.classList.contains('hidden') && !videoPlayer.ended;
+                    if (!isAlreadyActive) {
+                        switchTab('media');
+                        if (msg.isVideo) playVideoOnTV(msg.mediaUrl, msg.mediaTitle);
+                        else showPhotoOnTV(msg.mediaUrl, msg.mediaTitle);
+                    }
                 }
                 break;
             case 'mirror_state':
@@ -585,12 +590,17 @@
         showHUD(`▶ Playing in 4K: ${title || 'Video'}`);
     }
 
-    // Video Player Lifecycle Events for Glitch-Free 5GB+ Fast-Forwarding
+    // Video Player Lifecycle Events for Glitch-Free 6GB+ Fast-Forwarding
+    let userSeekingTarget = -1;
+    let seekDebounceTimer = null;
+
     videoPlayer.addEventListener('seeking', function () {
-        showHUD(`⏩ Seeking to ${formatTime(videoPlayer.currentTime)}...`);
+        const targetTime = userSeekingTarget >= 0 ? userSeekingTarget : videoPlayer.currentTime;
+        showHUD(`⏩ Seeking to ${formatTime(targetTime)}...`);
     });
 
     videoPlayer.addEventListener('seeked', function () {
+        userSeekingTarget = -1;
         showHUD(`▶ Playing at ${formatTime(videoPlayer.currentTime)}`);
         videoPlayer.play().catch(() => {});
     });
@@ -605,6 +615,15 @@
 
     videoPlayer.addEventListener('error', function () {
         console.warn('Video playback notice:', videoPlayer.error);
+        if (videoPlayer.currentTime > 0) {
+            const resumePos = videoPlayer.currentTime;
+            setTimeout(() => {
+                try {
+                    videoPlayer.currentTime = resumePos;
+                    videoPlayer.play().catch(() => {});
+                } catch (e) {}
+            }, 600);
+        }
     });
 
     function playFromBlob(blob, title) {
@@ -877,15 +896,29 @@
                 case 'l':
                 case 'L':
                     e.preventDefault();
-                    videoPlayer.currentTime = Math.min(videoPlayer.duration || 999999, videoPlayer.currentTime + 10);
-                    showHUD(`⏩ Forward +10s (${formatTime(videoPlayer.currentTime)})`);
+                    clearTimeout(seekDebounceTimer);
+                    const newTime = Math.min(videoPlayer.duration || 999999, (userSeekingTarget >= 0 ? userSeekingTarget : videoPlayer.currentTime) + 10);
+                    userSeekingTarget = newTime;
+                    showHUD(`⏩ Forward +10s (${formatTime(newTime)})`);
+                    seekDebounceTimer = setTimeout(() => {
+                        if (userSeekingTarget >= 0) {
+                            videoPlayer.currentTime = userSeekingTarget;
+                        }
+                    }, 120);
                     return;
                 case 'ArrowLeft':
                 case 'j':
                 case 'J':
                     e.preventDefault();
-                    videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 10);
-                    showHUD(`⏪ Rewind -10s (${formatTime(videoPlayer.currentTime)})`);
+                    clearTimeout(seekDebounceTimer);
+                    const rewTime = Math.max(0, (userSeekingTarget >= 0 ? userSeekingTarget : videoPlayer.currentTime) - 10);
+                    userSeekingTarget = rewTime;
+                    showHUD(`⏪ Rewind -10s (${formatTime(rewTime)})`);
+                    seekDebounceTimer = setTimeout(() => {
+                        if (userSeekingTarget >= 0) {
+                            videoPlayer.currentTime = userSeekingTarget;
+                        }
+                    }, 120);
                     return;
                 case ' ':
                 case 'k':
