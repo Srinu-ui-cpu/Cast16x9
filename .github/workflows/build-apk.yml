@@ -59,16 +59,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v1.5.0
-          name: Cast16x9 v1.5.0 Release (4K TV Database Caching & Glitch-Free Seeking)
+          tag_name: v1.6.0
+          name: Cast16x9 v1.6.0 Release (Cancel Video, Multi-Video Switching & Auto-Purge TV DB)
           body: |
-            ### Cast16x9 v1.5.0 Release - 4K TV Database Caching & Glitch-Free Seeking
-            - **Browser Database & Fast 4K Caching (IndexedDB)**: Eliminates all seek restarts and buffering glitches. Caches the full video into TV local browser storage for instantaneous 0ms forward/backward seeking without network dependency.
-            - **Flawless 4K 60fps Playback**: Plays from locally demuxed Blob memory, unlocking full hardware 4K decoding with zero frame drops or Wi-Fi jitter.
-            - **TV Remote Navigation Controls**: Left/Right arrows skip 10 seconds forward/backward smoothly, Space/OK toggles play/pause, with live TV seek HUD.
-            - **Fixed Duplicate Content-Length & Buffered Streaming**: Fixed HTTP 206 range response headers in the embedded Android server for seamless native DLNA seeking.
-            - **Unmuted TV Audio Engine**: Full UPnP video class metadata and zero-click TV browser autoplay unmute.
-            - **Zero-Lag 16:9 Screen Mirroring (<35ms)**: Hardware-accelerated memory pool and direct binary WebSocket push.
+            ### Cast16x9 v1.6.0 Release
+            - **Cancel / Close Video Button in TV Browser UI**: Added a prominent on-screen `[ ⏹ Cancel Video ]` button in the TV web receiver. Immediately closes video, resets player, wipes the video from TV IndexedDB / Cache storage, and returns to standby.
+            - **In-App Active Casting Card & Video Switcher**: Added active casting card in the phone APK with `[ ⏹ Stop / Cancel ]` and `[ 🔄 Change Video ]` buttons to switch between videos effortlessly.
+            - **Auto-Purge & Fresh Video Streaming**: Fixed the bug where the TV replayed the old video when switching files by generating unique cache-busting media IDs, adding `Cache-Control: no-cache, no-store`, and automatically clearing TV database storage on cancel or new beam.
+            - **TV Remote Shortcuts**: Pressing <kbd>Esc</kbd>, <kbd>Backspace</kbd>, or <kbd>C</kbd> instantly closes the video and purges TV storage. Left/Right arrows seek 10s smoothly.
+            - **4K Glitch-Free IndexedDB Database**: Full 4K 60fps playback from locally demuxed Blob storage with 0ms seek latency.
           files: release-output/Cast16x9-FullTV-ScreenMirror.apk
           draft: false
           prerelease: false

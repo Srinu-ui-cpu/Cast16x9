@@ -206,6 +206,81 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <!-- Active Casting Control Card (Allows Changing / Canceling Video from APK) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_active_cast"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:layout_marginBottom="10dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="@color/card_background"
+                app:strokeColor="@color/primary"
+                app:strokeWidth="1.5dp"
+                app:cardCornerRadius="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🎬 Now Casting:"
+                            android:textColor="@color/text_highlight"
+                            android:textStyle="bold"
+                            android:textSize="14sp" />
+
+                        <TextView
+                            android:id="@+id/tv_casting_title"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:text="Video Title"
+                            android:textColor="@color/text_primary"
+                            android:textStyle="bold"
+                            android:maxLines="1"
+                            android:ellipsize="end"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="10dp"
+                        android:gravity="end">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_change_video"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:text="🔄 Change Video"
+                            android:textSize="12sp"
+                            android:layout_marginEnd="8dp"
+                            app:backgroundTint="@color/secondary" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_stop_cast"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp"
+                            android:text="⏹ Stop / Cancel"
+                            android:textSize="12sp"
+                            app:backgroundTint="@color/accent_red" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_media_items"
                 android:layout_width="match_parent"

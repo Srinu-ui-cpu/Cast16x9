@@ -338,6 +338,36 @@ body.theme-dark {
     box-shadow: 0 0 14px #3fb950;
 }
 
+/* Floating On-Screen Cancel / Close Video Button */
+.btn-cancel-video {
+    position: absolute;
+    top: 24px;
+    right: 32px;
+    background: rgba(248, 81, 73, 0.90);
+    backdrop-filter: blur(8px);
+    border: 1px solid #ff7b72;
+    color: #ffffff;
+    padding: 10px 22px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 85;
+    box-shadow: 0 4px 16px rgba(248, 81, 73, 0.4);
+    transition: transform 0.2s, background 0.2s;
+}
+
+.btn-cancel-video:hover, .btn-cancel-video:focus {
+    background: #da3633;
+    transform: scale(1.08);
+    outline: none;
+    box-shadow: 0 0 18px rgba(248, 81, 73, 0.8);
+}
+
+.btn-cancel-video.hidden {
+    display: none !important;
+}
+
 /* 4K Fast TV Database Caching HUD */
 .caching-hud {
     position: absolute;

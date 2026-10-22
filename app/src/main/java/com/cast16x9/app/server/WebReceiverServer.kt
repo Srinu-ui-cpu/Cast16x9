@@ -365,6 +365,9 @@ class WebReceiverServer(
             )
             response.addHeader("Content-Range", "bytes $start-$end/$fileLength")
             response.addHeader("Accept-Ranges", "bytes")
+            response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+            response.addHeader("Pragma", "no-cache")
+            response.addHeader("Expires", "0")
             if (filename != null) {
                 response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
             }
@@ -386,6 +389,9 @@ class WebReceiverServer(
             newChunkedResponse(Response.Status.OK, mimeType, fullStream)
         }
         response.addHeader("Accept-Ranges", "bytes")
+        response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+        response.addHeader("Pragma", "no-cache")
+        response.addHeader("Expires", "0")
         if (filename != null) {
             response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
         }
@@ -427,12 +433,29 @@ class WebReceiverServer(
         currentMediaTitle = title
 
         val isVideo = mimeType.startsWith("video/")
+        val mediaId = java.util.UUID.randomUUID().toString().take(8)
+        val mediaUrl = "/media/active?id=$mediaId&t=${System.currentTimeMillis()}"
+
         val json = JSONObject().apply {
             put("action", if (isVideo) "play_video" else "show_photo")
-            put("url", "/media/active")
+            put("url", mediaUrl)
+            put("id", mediaId)
             put("title", title)
             put("isVideo", isVideo)
             put("unmute", true)
+            put("clearPreviousCache", true)
+        }
+        sendControlCommand(json)
+    }
+
+    fun stopCastingMedia() {
+        currentMediaUri = null
+        currentMediaMimeType = null
+        currentMediaTitle = null
+
+        val json = JSONObject().apply {
+            put("action", "stop_media")
+            put("clearCache", true)
         }
         sendControlCommand(json)
     }
@@ -481,12 +504,17 @@ class WebReceiverServer(
         }
 
         override fun onMessage(message: WebSocketFrame?) {
-            if (message != null && message.textPayload == "ping") {
+            val payload = message?.textPayload ?: return
+            if (payload == "ping") {
                 try {
                     synchronized(this) {
                         send("pong")
                     }
                 } catch (e: Exception) {}
+            } else if (payload.contains("media_cancelled")) {
+                currentMediaUri = null
+                currentMediaTitle = null
+                currentMediaMimeType = null
             }
         }
 

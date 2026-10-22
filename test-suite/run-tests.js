@@ -65,6 +65,7 @@ function testStaticAssets() {
     assert(htmlContent.includes('id="caching-hud"'), 'index.html contains 4K TV Database Caching HUD');
     assert(htmlContent.includes('id="caching-progress-bar"'), 'index.html contains Caching progress bar');
     assert(htmlContent.includes('id="btn-play-live"'), 'index.html contains Play Live (Skip Cache) button');
+    assert(htmlContent.includes('id="btn-cancel-video"'), 'index.html contains Cancel / Close Video button');
 
     const cssContent = fs.readFileSync(cssPath, 'utf8');
     assert(cssContent.includes('.aspect-cover'), 'CSS contains .aspect-cover class');
@@ -72,6 +73,7 @@ function testStaticAssets() {
     assert(cssContent.includes('.unmute-banner'), 'CSS contains .unmute-banner audio styles');
     assert(cssContent.includes('.caching-hud'), 'CSS contains .caching-hud 4K database styling');
     assert(cssContent.includes('.caching-progress-bar'), 'CSS contains .caching-progress-bar styling');
+    assert(cssContent.includes('.btn-cancel-video'), 'CSS contains .btn-cancel-video close styling');
     assert(cssContent.includes('100vw') && cssContent.includes('100vh'), 'CSS enforces 100vw/100vh full-screen rules');
 
     const jsContent = fs.readFileSync(jsPath, 'utf8');
@@ -84,7 +86,21 @@ function testStaticAssets() {
     assert(jsContent.includes('getCachedMedia'), 'app.js implements getCachedMedia() for 0ms glitch-free seeking');
     assert(jsContent.includes('saveMediaToCache'), 'app.js implements saveMediaToCache()');
     assert(jsContent.includes('playFromBlob'), 'app.js implements playFromBlob() for local 4K playback');
+    assert(jsContent.includes('cancelActiveMedia'), 'app.js implements cancelActiveMedia() for TV cancel button');
+    assert(jsContent.includes('clearAllMediaCache'), 'app.js implements clearAllMediaCache() to wipe TV DB on cancel/change');
     assert(jsContent.includes('keydown'), 'app.js listens to TV remote key events (1, 2, 3, etc.)');
+
+    // Android Layout & Server Verification for Changing/Canceling Cast
+    const layoutPath = path.join(ROOT_DIR, 'app', 'src', 'main', 'res', 'layout', 'activity_main.xml');
+    const layoutContent = fs.readFileSync(layoutPath, 'utf8');
+    assert(layoutContent.includes('id="@+id/card_active_cast"'), 'activity_main.xml contains active cast status card');
+    assert(layoutContent.includes('id="@+id/btn_stop_cast"'), 'activity_main.xml contains Stop / Cancel Cast button');
+    assert(layoutContent.includes('id="@+id/btn_change_video"'), 'activity_main.xml contains Change Video button');
+
+    const serverPath = path.join(JAVA_DIR, 'server', 'WebReceiverServer.kt');
+    const serverContent = fs.readFileSync(serverPath, 'utf8');
+    assert(serverContent.includes('stopCastingMedia'), 'WebReceiverServer implements stopCastingMedia()');
+    assert(serverContent.includes('clearPreviousCache'), 'WebReceiverServer sends clearPreviousCache on new video beam');
 }
 
 // =========================================================================

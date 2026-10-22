@@ -37,6 +37,7 @@
     const cachingProgressBar = document.getElementById('caching-progress-bar');
     const cachingStats = document.getElementById('caching-stats');
     const btnPlayLive = document.getElementById('btn-play-live');
+    const btnCancelVideo = document.getElementById('btn-cancel-video');
 
     const filesGrid = document.getElementById('files-grid');
     const btnRefreshFiles = document.getElementById('btn-refresh-files');
@@ -317,7 +318,10 @@
                 break;
             case 'play_video':
                 switchTab('media');
-                playVideoOnTV(msg.url, msg.title);
+                playVideoOnTV(msg.url, msg.title, msg.clearPreviousCache === true);
+                break;
+            case 'stop_media':
+                cancelActiveMedia(false);
                 break;
             case 'show_photo':
                 switchTab('media');
@@ -432,10 +436,91 @@
         }
     }
 
-    async function playVideoOnTV(url, title) {
+    async function clearAllMediaCache() {
+        inMemoryMediaCache.clear();
+        const db = await openDB();
+        if (db) {
+            try {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.clear();
+            } catch (e) {}
+        }
+        if (window.caches) {
+            try {
+                const keys = await caches.keys();
+                for (let k of keys) await caches.delete(k);
+            } catch (e) {}
+        }
+    }
+
+    function cancelActiveMedia(notifyServer = true) {
+        // 1. Abort any background downloading stream
+        if (currentDownloadAbort) {
+            currentDownloadAbort.abort();
+            currentDownloadAbort = null;
+        }
+
+        // 2. Stop and release video player completely
+        if (videoPlayer) {
+            videoPlayer.pause();
+            if (activeBlobUrl) {
+                try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+                activeBlobUrl = null;
+            }
+            videoPlayer.removeAttribute('src');
+            videoPlayer.load();
+            videoPlayer.classList.add('hidden');
+        }
+
+        // 3. Reset photo viewer
+        if (photoViewer) {
+            photoViewer.classList.add('hidden');
+        }
+
+        // 4. Hide all active HUDs and buttons
+        if (cachingHud) cachingHud.classList.add('hidden');
+        if (unmuteBanner) unmuteBanner.classList.add('hidden');
+        if (btnCancelVideo) btnCancelVideo.classList.add('hidden');
+        if (mediaPlaceholder) mediaPlaceholder.classList.remove('hidden');
+
+        // 5. Completely wipe video from TV database and cache
+        clearAllMediaCache();
+
+        // 6. Notify phone server
+        if (notifyServer && ws && ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send(JSON.stringify({ action: 'media_cancelled' }));
+            } catch (e) {}
+        }
+
+        showHUD('⏹ Video Canceled & Storage Cleared');
+    }
+
+    if (btnCancelVideo) {
+        btnCancelVideo.addEventListener('click', function (e) {
+            e.stopPropagation();
+            cancelActiveMedia(true);
+        });
+    }
+
+    async function playVideoOnTV(url, title, clearPrevious = false) {
+        if (clearPrevious) {
+            await clearAllMediaCache();
+        }
+
+        // Reset and stop any currently playing video first
+        videoPlayer.pause();
+        if (activeBlobUrl) {
+            try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+            activeBlobUrl = null;
+        }
+        videoPlayer.removeAttribute('src');
+
         photoViewer.classList.add('hidden');
         mediaPlaceholder.classList.add('hidden');
         videoPlayer.classList.remove('hidden');
+        if (btnCancelVideo) btnCancelVideo.classList.remove('hidden');
 
         // Cancel previous background caching download if any
         if (currentDownloadAbort) {
@@ -443,7 +528,7 @@
             currentDownloadAbort = null;
         }
 
-        const cacheKey = (title || 'video') + '_' + url.split('?')[0];
+        const cacheKey = (title || 'video') + '_' + (url.indexOf('?') !== -1 ? url.split('?')[1] : url);
 
         // 1. Instant Playback if already cached in TV database
         const cached = await getCachedMedia(cacheKey);
@@ -547,6 +632,7 @@
             activeBlobUrl = null;
         }
         videoPlayer.src = url;
+        if (btnCancelVideo) btnCancelVideo.classList.remove('hidden');
         unmuteAudio();
         videoPlayer.play().catch(() => {});
         showHUD(`Live Stream: ${title || 'Video'}`);
@@ -742,6 +828,13 @@
                     e.preventDefault();
                     if (videoPlayer.paused) { videoPlayer.play(); showHUD('▶ Playing'); }
                     else { videoPlayer.pause(); showHUD('⏸ Paused'); }
+                    return;
+                case 'Escape':
+                case 'Backspace':
+                case 'c':
+                case 'C':
+                    e.preventDefault();
+                    cancelActiveMedia(true);
                     return;
             }
         }

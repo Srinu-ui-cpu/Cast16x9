@@ -149,6 +149,19 @@ class MainActivity : AppCompatActivity() {
         binding.btnAddFiles.setOnClickListener {
             filePickerLauncher.launch(arrayOf("*/*"))
         }
+
+        // Active Cast Controls (Stop / Change Video from APK)
+        binding.btnStopCast.setOnClickListener {
+            webServer?.stopCastingMedia()
+            binding.cardActiveCast.visibility = View.GONE
+            Toast.makeText(this, "Casting canceled. Video cleared from TV database.", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.btnChangeVideo.setOnClickListener {
+            webServer?.stopCastingMedia()
+            binding.cardActiveCast.visibility = View.GONE
+            Toast.makeText(this, "Tap any video below to cast freshly to TV", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupNavigation() {
@@ -275,9 +288,13 @@ class MainActivity : AppCompatActivity() {
                     0 -> {
                         // Cast to Web Receiver in full 1080p/4K
                         webServer?.castMediaToTv(item.uri, item.mimeType, item.title)
+                        binding.cardActiveCast.visibility = View.VISIBLE
+                        binding.tvCastingTitle.text = item.title
                         Toast.makeText(this, "Casting 1080p/4K to TV Web Receiver...", Toast.LENGTH_SHORT).show()
                     }
                     1 -> {
+                        binding.cardActiveCast.visibility = View.VISIBLE
+                        binding.tvCastingTitle.text = item.title
                         if (activeDlnaDevice != null) {
                             castToDlna(item, activeDlnaDevice!!)
                         } else {
