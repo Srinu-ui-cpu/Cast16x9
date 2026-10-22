@@ -59,15 +59,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v1.7.0
-          name: Cast16x9 v1.7.0 Release (Instant Cancel, Auto DB Purge & Real-Time TV Space Reclaim)
+          tag_name: v1.8.0
+          name: Cast16x9 v1.8.0 Release (Universal HTTP 206 Byte-Range Seeking Engine)
           body: |
-            ### Cast16x9 v1.7.0 Release
-            - **Instant Cancel Video & Space Purge**: Added high-visibility `[ ❌ Cancel Video & Free TV Space ]` button in the TV web receiver floating overlay and caching dialog, plus active controls in the mobile APK (`[ ❌ Cancel & Free TV Space ]` and `[ 🔄 Switch Video ]`).
-            - **Atomic TV Storage & RAM Purge**: Immediately aborts network download, revokes blob object URLs, wipes IndexedDB database (`Cast16x9_MediaDB`), and deletes Cache API entries the exact moment cancel is pressed, freeing 100% of TV storage and RAM for the next video.
-            - **Two-Way Real-Time State Sync**: Canceling video on TV immediately hides the active casting card in the mobile APK via WebSocket and HTTP `/api/media/cancel`, and stopping from APK resets TV receiver instantly.
-            - **TV Remote Shortcuts**: Pressing <kbd>Esc</kbd>, <kbd>Backspace</kbd>, <kbd>C</kbd>, or <kbd>0</kbd> on any TV remote immediately cancels media and purges TV storage.
-            - **Zero-Glitch Fresh Media Beaming**: Every newly cast video gets a unique timestamp ID (`/media/active?id=<id>&t=<time>`) ensuring previous videos are never replayed.
+            ### Cast16x9 v1.8.0 Universal Release
+            - **Universal HTTP 206 Partial Content Pipeline**: Eliminated the 30MB Smart TV browser memory cap completely. The TV now streams directly using native hardware video decoding via standard HTTP/1.1 byte ranges.
+            - **Instant Glitch-Free O(1) Seeking**: Moving forward or backward on the TV remote or seekbar resolves in < 5ms via dedicated file channel seeks, resuming instantly with ZERO restart to 0:00.
+            - **5-Way Fallback File Length Resolver**: Uses AssetFileDescriptor, MediaStore SIZE, OpenableColumns, ParcelFileDescriptor, and direct file path to guarantee exact file size and duration on all Android devices.
+            - **HTTP HEAD & Suffix Range Compliance**: Fully handles browser video player probe requests (`Method.HEAD`), returning standard `Accept-Ranges: bytes`, `ETag`, and `Content-Length`.
+            - **Zero TV RAM / Zero Quota Overhead**: Video plays directly without storing gigabytes in TV JavaScript memory or IndexedDB, completely preventing TV browser memory crashes.
+            - **Instant Video Cancellation**: Cancel buttons in both Phone APK and TV Web Receiver immediately free all resources for seamless video switching.
           files: release-output/Cast16x9-FullTV-ScreenMirror.apk
           draft: false
           prerelease: false

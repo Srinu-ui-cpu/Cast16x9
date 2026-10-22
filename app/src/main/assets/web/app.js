@@ -551,28 +551,38 @@
 
         photoViewer.classList.add('hidden');
         mediaPlaceholder.classList.add('hidden');
+        if (cachingHud) cachingHud.classList.add('hidden');
         videoPlayer.classList.remove('hidden');
         if (btnCancelVideo) btnCancelVideo.classList.remove('hidden');
 
         // Cancel previous background caching download if any
         if (currentDownloadAbort) {
-            currentDownloadAbort.abort();
+            try { currentDownloadAbort.abort(); } catch (e) {}
             currentDownloadAbort = null;
         }
 
-        const cacheKey = (title || 'video') + '_' + (url.indexOf('?') !== -1 ? url.split('?')[1] : url);
+        // Universal Direct Hardware 4K Streaming (HTTP 206 Byte-Range Pipeline)
+        // Enables instant O(1) seek forward/backward without 30MB browser memory capping.
+        videoPlayer.src = url;
+        videoPlayer.load();
+        unmuteAudio();
 
-        // 1. Instant Playback if already cached in TV database
-        const cached = await getCachedMedia(cacheKey);
-        if (cached && cached.blob) {
-            if (cachingHud) cachingHud.classList.add('hidden');
-            playFromBlob(cached.blob, title);
-            showHUD('⚡ Loaded from TV Database: Glitch-Free 4K Seeking Enabled');
-            return;
+        const playPromise = videoPlayer.play();
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                if (unmuteBanner) unmuteBanner.classList.add('hidden');
+            }).catch(err => {
+                videoPlayer.muted = true;
+                videoPlayer.play().then(() => {
+                    if (unmuteBanner) unmuteBanner.classList.remove('hidden');
+                    showHUD('🔇 Audio Muted by TV: Press OK on Remote to Turn Sound ON');
+                }).catch(e => {
+                    console.error('Video play error:', e);
+                });
+            });
         }
 
-        // 2. High-Speed Cache Download into TV Storage
-        startFastCachingAndPlay(url, title, cacheKey);
+        showHUD(`▶ Playing in 4K: ${title || 'Video'}`);
     }
 
     function playFromBlob(blob, title) {

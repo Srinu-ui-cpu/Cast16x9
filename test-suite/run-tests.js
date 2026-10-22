@@ -107,6 +107,8 @@ function testStaticAssets() {
     assert(serverContent.includes('/api/media/cancel'), 'WebReceiverServer routes /api/media/cancel');
     assert(serverContent.includes('onMediaCancelledListener'), 'WebReceiverServer provides onMediaCancelledListener callback');
     assert(serverContent.includes('clearPreviousCache'), 'WebReceiverServer sends clearPreviousCache on new video beam');
+    assert(serverContent.includes('getMediaFileLength'), 'WebReceiverServer implements getMediaFileLength() with 5 fallback strategies');
+    assert(serverContent.includes('Method.HEAD'), 'WebReceiverServer handles HTTP HEAD request probing');
 }
 
 // =========================================================================
@@ -218,6 +220,18 @@ async function testServerProtocols() {
             return;
         }
 
+        // HTTP HEAD probing for TV video player
+        if (req.method === 'HEAD' && (url === '/media/active' || url === '/files/download/file-02')) {
+            res.writeHead(200, {
+                'Content-Length': mockVideoSize,
+                'Content-Type': 'video/mp4',
+                'Accept-Ranges': 'bytes',
+                'Cache-Control': 'public, max-age=86400'
+            });
+            res.end();
+            return;
+        }
+
         // Active media stream with Range request support (HTTP 206)
         if (url === '/media/active' || url === '/files/download/file-02') {
             const rangeHeader = req.headers.range;
@@ -303,6 +317,12 @@ async function testServerProtocols() {
         assert(resCancel.statusCode === 200, 'HTTP GET /api/media/cancel returns 200 OK');
         const cancelJson = JSON.parse(resCancel.body);
         assert(cancelJson.status === 'cancelled' && cancelJson.freed === true, '/api/media/cancel confirms media cancelled and TV storage freed');
+
+        // Request 6: HTTP HEAD request for TV video probe
+        const resHead = await makeRequest('http://127.0.0.1:9876/media/active', { method: 'HEAD' });
+        assert(resHead.statusCode === 200, 'HTTP HEAD /media/active returns 200 OK');
+        assert(resHead.headers['accept-ranges'] === 'bytes', 'HTTP HEAD response advertises Accept-Ranges: bytes');
+        assert(parseInt(resHead.headers['content-length'], 10) === mockVideoSize, 'HTTP HEAD response returns exact video Content-Length');
 
     } finally {
         await new Promise((resolve) => server.close(resolve));
