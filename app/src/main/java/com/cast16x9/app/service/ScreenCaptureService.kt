@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -72,7 +73,12 @@ class ScreenCaptureService : Service() {
                 val density = intent.getIntExtra(EXTRA_DENSITY, 320)
 
                 if (resultData != null) {
-                    startForeground(NOTIFICATION_ID, buildNotification("Screen Mirroring Active in Full 16:9"))
+                    val notification = buildNotification("Screen Mirroring Active in Full 16:9")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                    } else {
+                        startForeground(NOTIFICATION_ID, notification)
+                    }
                     startCapture(resultCode, resultData, width, height, density)
                     isServiceRunning = true
                 }
@@ -96,6 +102,13 @@ class ScreenCaptureService : Service() {
     ) {
         val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = mpManager.getMediaProjection(resultCode, resultData)
+
+        // Android 14+ explicitly requires callback registration prior to creating VirtualDisplay
+        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                stopCapture()
+            }
+        }, backgroundHandler)
 
         // Scale resolution for smooth Wi-Fi transmission (aligned to even pixel boundaries)
         var cWidth = if (width > 1280) 1280 else width

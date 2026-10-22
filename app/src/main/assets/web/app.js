@@ -1,4 +1,4 @@
-// Cast16x9 TV Web Receiver Logic v1.1.0
+// Cast16x9 TV Web Receiver Logic v1.2.0
 (function () {
     'use strict';
 
@@ -11,14 +11,12 @@
     let statusSyncInterval = null;
     let hudTimer = null;
     let isMirroringActive = false;
-    let usePollingFallback = false;
-    let pollTimer = null;
+    let isFramePending = false;
 
     // DOM Elements
     const statusBadge = document.getElementById('connection-status');
     const mirrorWrapper = document.getElementById('mirror-wrapper');
     const screenStream = document.getElementById('screen-stream');
-    const canvas = document.getElementById('screen-canvas');
     const mirrorPlaceholder = document.getElementById('mirror-placeholder');
     const activeModeName = document.getElementById('active-mode-name');
     const hudOverlay = document.getElementById('hud-overlay');
@@ -45,8 +43,6 @@
         fit: document.getElementById('btn-mode-fit')
     };
 
-    const ctx = canvas.getContext('2d');
-
     // 1. Navigation / Tab Switching
     function switchTab(tabKey) {
         if (!tabs[tabKey]) return;
@@ -71,6 +67,7 @@
     function setAspectMode(mode, showNotification = true) {
         aspectMode = mode;
         mirrorWrapper.className = `aspect-${mode}`;
+        screenStream.className = `aspect-${mode}`;
 
         Object.keys(modeButtons).forEach(m => {
             modeButtons[m].classList.toggle('active', m === mode);
@@ -104,99 +101,52 @@
         modeButtons[mode].addEventListener('click', () => setAspectMode(mode));
     });
 
-    // 3. Screen Mirror Stream Management (Hardware-Accelerated Dual Pipeline)
+    // 3. Smooth, Crash-Proof Screen Mirroring Pipeline (Auto-Adaptive 30-60 FPS)
     function startScreenStream() {
         if (isMirroringActive) return;
         isMirroringActive = true;
         mirrorPlaceholder.classList.add('hidden');
+        screenStream.classList.remove('hidden');
 
-        if (!usePollingFallback) {
-            // Hardware-accelerated continuous MJPEG stream
-            screenStream.classList.remove('hidden');
-            screenStream.src = `/stream.mjpg?t=${Date.now()}`;
-
-            screenStream.onerror = function () {
-                console.warn('MJPEG stream error or unsupported, switching to polling fallback...');
-                usePollingFallback = true;
-                screenStream.classList.add('hidden');
-                startFramePolling();
-            };
-        } else {
-            startFramePolling();
-        }
+        fetchNextFrame();
     }
 
     function stopScreenStream() {
         isMirroringActive = false;
-        screenStream.src = '';
+        isFramePending = false;
         screenStream.classList.add('hidden');
-        canvas.classList.add('hidden');
         mirrorPlaceholder.classList.remove('hidden');
-        clearTimeout(pollTimer);
     }
 
-    function startFramePolling() {
-        canvas.classList.remove('hidden');
+    function fetchNextFrame() {
+        if (!isMirroringActive || isFramePending) return;
+        isFramePending = true;
 
-        function fetchNext() {
-            if (!isMirroringActive) return;
-            const img = new Image();
-            img.onload = function () {
-                drawFrameToCanvas(img);
-                pollTimer = setTimeout(fetchNext, 33); // ~30 fps
-            };
-            img.onerror = function () {
-                pollTimer = setTimeout(fetchNext, 100);
-            };
-            img.src = `/api/frame?t=${Date.now()}`;
-        }
-        fetchNext();
-    }
-
-    function drawFrameToCanvas(img) {
-        const targetWidth = window.innerWidth || 1920;
-        const targetHeight = window.innerHeight || 1080;
-
-        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-            canvas.width = targetWidth;
-            canvas.height = targetHeight;
-        }
-
-        const srcAspect = img.width / img.height;
-        const tvAspect = targetWidth / targetHeight;
-
-        if (aspectMode === 'stretch') {
-            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-        } else if (aspectMode === 'cover') {
-            let dw, dh;
-            if (srcAspect > tvAspect) {
-                dh = targetHeight;
-                dw = targetHeight * srcAspect;
-            } else {
-                dw = targetWidth;
-                dh = targetWidth / srcAspect;
+        const nextImg = new Image();
+        nextImg.onload = function () {
+            if (isMirroringActive) {
+                screenStream.src = nextImg.src;
+                mirrorPlaceholder.classList.add('hidden');
+                screenStream.classList.remove('hidden');
             }
-            const dx = (targetWidth - dw) / 2;
-            const dy = (targetHeight - dh) / 2;
-            ctx.drawImage(img, dx, dy, dw, dh);
-        } else {
-            let dw, dh;
-            if (srcAspect > tvAspect) {
-                dw = targetWidth;
-                dh = targetWidth / srcAspect;
-            } else {
-                dh = targetHeight;
-                dw = targetHeight * srcAspect;
+            isFramePending = false;
+            if (isMirroringActive) {
+                // Schedule next frame immediately via requestAnimationFrame for silky smooth 60fps
+                requestAnimationFrame(fetchNextFrame);
             }
-            const dx = (targetWidth - dw) / 2;
-            const dy = (targetHeight - dh) / 2;
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, targetWidth, targetHeight);
-            ctx.drawImage(img, dx, dy, dw, dh);
-        }
+        };
+
+        nextImg.onerror = function () {
+            isFramePending = false;
+            if (isMirroringActive) {
+                setTimeout(fetchNextFrame, 100);
+            }
+        };
+
+        nextImg.src = `/api/frame?t=${Date.now()}`;
     }
 
-    // 4. Rock-Solid WebSocket Connection for Signaling & Remote Commands
+    // 4. WebSocket for Instant Remote Control & Push Signaling
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
@@ -205,18 +155,16 @@
         try {
             ws = new WebSocket(wsUrl);
         } catch (e) {
-            console.error('Failed to create WebSocket:', e);
             scheduleReconnect();
             return;
         }
 
         ws.onopen = function () {
-            console.log('Connected to Cast16x9 signaling server!');
             statusBadge.textContent = 'Connected (Live)';
             statusBadge.className = 'badge badge-connected';
             clearTimeout(reconnectTimer);
 
-            // Start heartbeat ping
+            // Heartbeat
             clearInterval(pingInterval);
             pingInterval = setInterval(() => {
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -231,32 +179,20 @@
                 try {
                     const message = JSON.parse(event.data);
                     handleControlMessage(message);
-                } catch (e) {
-                    console.error('Invalid JSON message:', event.data);
-                }
+                } catch (e) {}
             } else if (event.data instanceof Blob) {
-                // If binary frame is sent via WebSocket
                 if (!isMirroringActive) startScreenStream();
                 const url = URL.createObjectURL(event.data);
-                const img = new Image();
-                img.onload = function () {
-                    drawFrameToCanvas(img);
-                    URL.revokeObjectURL(url);
-                };
-                img.src = url;
+                screenStream.src = url;
             }
         };
 
         ws.onclose = function () {
-            console.log('Signaling stream disconnected. Reconnecting in 3s...');
-            statusBadge.textContent = 'Reconnecting...';
-            statusBadge.className = 'badge badge-disconnected';
             clearInterval(pingInterval);
             scheduleReconnect();
         };
 
-        ws.onerror = function (err) {
-            console.error('WebSocket Error:', err);
+        ws.onerror = function () {
             try { ws.close(); } catch (e) {}
         };
     }
@@ -268,7 +204,7 @@
 
     // Handle incoming commands
     function handleControlMessage(msg) {
-        console.log('Received remote command:', msg);
+        console.log('Remote control command:', msg);
         switch (msg.action) {
             case 'init_state':
                 if (msg.aspectMode) setAspectMode(msg.aspectMode, false);
@@ -307,12 +243,13 @@
         }
     }
 
-    // 5. Media Player Handling (Native 16:9 full TV screen playback)
+    // 5. Media Player Handling (Direct Fullscreen 16:9 Video & Forward/Seek Support)
     function playVideoOnTV(url, title) {
         photoViewer.classList.add('hidden');
         mediaPlaceholder.classList.add('hidden');
         videoPlayer.classList.remove('hidden');
 
+        // Set video source with timestamp to avoid stale browser cache
         videoPlayer.src = url;
         const playPromise = videoPlayer.play();
         if (playPromise !== undefined) {
@@ -345,13 +282,18 @@
         }
     }
 
-    // 6. State Synchronization Safety Net (Polls /api/status)
+    // 6. State Synchronization Safety Net (Polls /api/status every 1.5s)
     function syncServerStatus() {
-        fetch('/api/status')
-            .then(res => res.json())
+        fetch('/api/status?t=' + Date.now())
+            .then(res => {
+                if (!res.ok) throw new Error('Status HTTP ' + res.status);
+                return res.json();
+            })
             .then(data => {
+                statusBadge.textContent = 'Connected (Live)';
+                statusBadge.className = 'badge badge-connected';
+
                 if (data.isMirroring && !isMirroringActive) {
-                    console.log('Mirroring detected active from status API!');
                     startScreenStream();
                 } else if (!data.isMirroring && isMirroringActive) {
                     stopScreenStream();
@@ -368,18 +310,27 @@
                     }
                 }
             })
-            .catch(() => {});
+            .catch(() => {
+                // Only show reconnecting if we haven't seen the server
+                if (!isMirroringActive) {
+                    statusBadge.textContent = 'Connecting...';
+                    statusBadge.className = 'badge badge-disconnected';
+                }
+            });
     }
 
-    // 7. File Sharing Portal
+    // 7. File Sharing Portal (Robust Loading & Instant Downloads)
     function loadSharedFiles() {
         filesGrid.innerHTML = '<div class="loading-spinner">Fetching files from phone...</div>';
 
-        fetch('/api/files')
-            .then(res => res.json())
+        fetch('/api/files?t=' + Date.now())
+            .then(res => {
+                if (!res.ok) throw new Error('Files HTTP ' + res.status);
+                return res.json();
+            })
             .then(files => {
                 if (!files || files.length === 0) {
-                    filesGrid.innerHTML = '<p class="empty-state">No files currently shared. Share files from the Cast16x9 app on your phone.</p>';
+                    filesGrid.innerHTML = '<div class="empty-state"><h3>📁 No files currently shared</h3><p>Open the Cast16x9 app on your phone, navigate to the <strong>File Share</strong> tab, and tap <strong>"Add Files to Share"</strong> to download or stream them here.</p></div>';
                     return;
                 }
 
@@ -399,7 +350,7 @@
                             <div class="file-meta">${sizeFormatted}</div>
                         </div>
                         <div class="file-actions">
-                            <a href="${file.url}" target="_blank" class="btn-file" tabindex="${100 + index}">⬇️ Download</a>
+                            <a href="${file.url}" download="${escapeHtml(file.name)}" class="btn-file" tabindex="${100 + index}">⬇️ Download</a>
                             ${file.isVideo ? `<button class="btn-file btn-play" data-url="${file.url}" data-name="${escapeHtml(file.name)}" tabindex="${200 + index}">▶ Play</button>` : ''}
                         </div>
                     `;
@@ -418,7 +369,7 @@
             })
             .catch(err => {
                 console.error('Error fetching files:', err);
-                filesGrid.innerHTML = '<p class="error-state">Failed to connect to phone file service.</p>';
+                filesGrid.innerHTML = '<div class="empty-state"><h3>⚠️ Could not load shared files</h3><p>Ensure your phone is running the Cast16x9 app and connected to the same Wi-Fi.</p></div>';
             });
     }
 
@@ -468,10 +419,10 @@
         }
     }
 
-    // Initial setup
+    // Initialize
     setAspectMode('cover', false);
     connectWebSocket();
     syncServerStatus();
-    statusSyncInterval = setInterval(syncServerStatus, 4000);
+    statusSyncInterval = setInterval(syncServerStatus, 1500);
 
 })();

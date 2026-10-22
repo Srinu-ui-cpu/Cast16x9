@@ -2,6 +2,7 @@ package com.cast16x9.app.server
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import com.cast16x9.app.model.SharedFile
 import fi.iki.elonen.NanoHTTPD
@@ -9,8 +10,8 @@ import fi.iki.elonen.NanoWSD
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.FileInputStream
 import java.io.InputStream
-import java.io.InterruptedIOException
 import java.util.concurrent.CopyOnWriteArrayList
 
 class WebReceiverServer(
@@ -18,7 +19,7 @@ class WebReceiverServer(
     port: Int = 8080
 ) : NanoWSD(port) {
 
-    // Connected TV Web Receiver WebSocket clients (used for signaling and remote control)
+    // Connected TV Web Receiver WebSocket clients
     private val connectedClients = CopyOnWriteArrayList<ScreenWebSocket>()
 
     // Shared files exposed to the TV Web Receiver
@@ -41,17 +42,34 @@ class WebReceiverServer(
         return ScreenWebSocket(handshake)
     }
 
+    /**
+     * Enhanced WebSocket detection compatible with all TV & mobile browser headers.
+     */
+    override fun isWebsocketRequested(session: IHTTPSession): Boolean {
+        val uri = session.uri.trimEnd('/')
+        if (uri == "/ws/screen" || uri == "/ws") {
+            return true
+        }
+
+        val headers = session.headers
+        val upgrade = headers.entries.firstOrNull { it.key.equals("upgrade", ignoreCase = true) }?.value ?: ""
+        val connection = headers.entries.firstOrNull { it.key.equals("connection", ignoreCase = true) }?.value ?: ""
+
+        return upgrade.contains("websocket", ignoreCase = true) || connection.contains("Upgrade", ignoreCase = true)
+    }
+
     override fun serve(session: IHTTPSession): Response {
-        // Handle WebSocket handshake if requested
-        if (isWebsocketRequested(session)) {
+        val uri = session.uri.trimEnd('/')
+
+        // Handle WebSocket handshake
+        if (uri == "/ws/screen" || uri == "/ws" || isWebsocketRequested(session)) {
             return super.serve(session)
         }
 
-        val uri = session.uri
         try {
             when {
                 // 1. Root & Static TV Web Receiver Assets
-                uri == "/" || uri == "/index.html" -> {
+                uri == "" || uri == "/index.html" -> {
                     return serveAsset("web/index.html", "text/html")
                 }
                 uri == "/style.css" -> {
@@ -62,35 +80,22 @@ class WebReceiverServer(
                 }
 
                 // 2. Status & State Synchronization Endpoint
-                uri == "/api/status" -> {
+                uri.startsWith("/api/status") -> {
                     return serveStatusJson()
                 }
 
                 // 3. High-Performance Live Screen Stream (MJPEG)
-                uri == "/stream.mjpg" -> {
+                uri.startsWith("/stream.mjpg") -> {
                     return serveMjpegStream()
                 }
 
                 // 4. Single Frame Endpoint (Ultra-fast polling fallback)
                 uri.startsWith("/api/frame") -> {
-                    val frame = latestFrameBytes
-                    if (frame != null) {
-                        val response = newFixedLengthResponse(
-                            Response.Status.OK,
-                            "image/jpeg",
-                            ByteArrayInputStream(frame),
-                            frame.size.toLong()
-                        )
-                        response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
-                        response.addHeader("Pragma", "no-cache")
-                        response.addHeader("Access-Control-Allow-Origin", "*")
-                        return response
-                    }
-                    return newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, "")
+                    return serveLatestFrame()
                 }
 
                 // 5. File Catalog API
-                uri == "/api/files" -> {
+                uri.startsWith("/api/files") -> {
                     return serveFilesJson()
                 }
 
@@ -101,39 +106,43 @@ class WebReceiverServer(
                     if (file != null) {
                         return serveStreamableMedia(file.uri, file.mimeType, session, file.name, isAttachment = true)
                     }
-                    return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "File not found")
+                    return withCors(newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "File not found"))
                 }
 
-                // 7. Active Media Stream (Direct 16:9 Video/Photo Beaming)
+                // 7. Active Media Stream (Direct 16:9 Video/Photo Beaming with full Forward/Seeking support)
                 uri.startsWith("/media/active") -> {
                     val activeUri = currentMediaUri
                     val mime = currentMediaMimeType ?: "video/mp4"
                     if (activeUri != null) {
                         return serveStreamableMedia(activeUri, mime, session, currentMediaTitle, isAttachment = false)
                     }
-                    return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "No active media")
+                    return withCors(newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "No active media"))
                 }
 
                 else -> {
-                    return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "404 Not Found")
+                    return withCors(newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "404 Not Found"))
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Server Error: ${e.message}")
+            return withCors(newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Server Error: ${e.message}"))
         }
+    }
+
+    private fun withCors(response: Response): Response {
+        response.addHeader("Access-Control-Allow-Origin", "*")
+        response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
+        response.addHeader("Access-Control-Allow-Headers", "*")
+        return response
     }
 
     private fun serveAsset(assetPath: String, mimeType: String): Response {
         val inputStream = context.assets.open(assetPath)
         val response = newChunkedResponse(Response.Status.OK, mimeType, inputStream)
         response.addHeader("Cache-Control", "no-cache")
-        return response
+        return withCors(response)
     }
 
-    /**
-     * Serves current state so TV browser immediately syncs upon opening or reconnecting.
-     */
     private fun serveStatusJson(): Response {
         val json = JSONObject().apply {
             put("isMirroring", isMirroringActive)
@@ -150,14 +159,27 @@ class WebReceiverServer(
             }
         }
         val response = newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
-        response.addHeader("Access-Control-Allow-Origin", "*")
-        response.addHeader("Cache-Control", "no-cache")
-        return response
+        response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+        return withCors(response)
     }
 
-    /**
-     * Continuous hardware-accelerated MJPEG stream for modern TV browsers.
-     */
+    private fun serveLatestFrame(): Response {
+        val frame = latestFrameBytes
+        if (frame != null && frame.isNotEmpty()) {
+            val response = newFixedLengthResponse(
+                Response.Status.OK,
+                "image/jpeg",
+                ByteArrayInputStream(frame),
+                frame.size.toLong()
+            )
+            response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate")
+            response.addHeader("Pragma", "no-cache")
+            return withCors(response)
+        }
+        // Fallback: Return 204 when no frame is available yet
+        return withCors(newFixedLengthResponse(Response.Status.NO_CONTENT, MIME_PLAINTEXT, ""))
+    }
+
     private fun serveMjpegStream(): Response {
         val boundary = "cast16x9frameboundary"
         val mjpegStream = object : InputStream() {
@@ -172,15 +194,10 @@ class WebReceiverServer(
             }
 
             override fun read(b: ByteArray, off: Int, len: Int): Int {
-                // If current frame buffer is exhausted, wait for next frame
                 while (currentBuffer == null || bufferPos >= currentBuffer!!.size) {
-                    if (!isMirroringActive) {
-                        return -1 // Mirroring stopped, close stream
-                    }
-
-                    // Check for new frame
                     val frame = latestFrameBytes
                     val frameTime = latestFrameTimestamp
+
                     if (frame != null && frameTime > lastServedTime) {
                         lastServedTime = frameTime
                         val header = "--$boundary\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.size}\r\n\r\n"
@@ -197,9 +214,8 @@ class WebReceiverServer(
                         break
                     }
 
-                    // Sleep briefly to yield CPU
                     try {
-                        Thread.sleep(15)
+                        Thread.sleep(20)
                     } catch (e: InterruptedException) {
                         return -1
                     }
@@ -220,8 +236,7 @@ class WebReceiverServer(
         )
         response.addHeader("Cache-Control", "no-cache, private")
         response.addHeader("Pragma", "no-cache")
-        response.addHeader("Access-Control-Allow-Origin", "*")
-        return response
+        return withCors(response)
     }
 
     private fun serveFilesJson(): Response {
@@ -239,13 +254,12 @@ class WebReceiverServer(
             jsonArray.put(obj)
         }
         val response = newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
-        response.addHeader("Access-Control-Allow-Origin", "*")
         response.addHeader("Cache-Control", "no-cache")
-        return response
+        return withCors(response)
     }
 
     /**
-     * Serves media with reliable HTTP Range support (206 Partial Content) for smooth video seeking.
+     * Hardware-accelerated media streaming with O(1) byte seeking for video forwarding.
      */
     private fun serveStreamableMedia(
         contentUri: Uri,
@@ -255,29 +269,40 @@ class WebReceiverServer(
         isAttachment: Boolean = false
     ): Response {
         val cr = context.contentResolver
+        var pfd: ParcelFileDescriptor? = null
         var fileLength = -1L
 
         try {
-            fileLength = cr.openAssetFileDescriptor(contentUri, "r")?.use { it.length } ?: -1L
+            pfd = cr.openFileDescriptor(contentUri, "r")
+            if (pfd != null) {
+                fileLength = pfd.statSize
+            }
         } catch (e: Exception) {
-            // Some providers don't give asset file descriptor, fallback to querying size
+            // Fallback to AssetFileDescriptor
+            try {
+                cr.openAssetFileDescriptor(contentUri, "r")?.use { fileLength = it.length }
+            } catch (ex: Exception) {}
         }
 
         if (fileLength <= 0) {
             try {
                 cr.query(contentUri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) {
-                        val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                        if (sizeIdx != -1) fileLength = cursor.getLong(sizeIdx)
+                        val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (idx != -1) fileLength = cursor.getLong(idx)
                     }
                 }
             } catch (e: Exception) {}
         }
 
         val dispositionType = if (isAttachment) "attachment" else "inline"
-        val rangeHeader = session.headers["range"]
 
-        if (rangeHeader != null && rangeHeader.startsWith("bytes=") && fileLength > 0) {
+        // Find Range header case-insensitively
+        val rangeHeader = session.headers.entries.firstOrNull {
+            it.key.equals("range", ignoreCase = true)
+        }?.value
+
+        if (rangeHeader != null && rangeHeader.startsWith("bytes=") && fileLength > 0 && pfd != null) {
             var start: Long = 0
             var end: Long = fileLength - 1
             val ranges = rangeHeader.removePrefix("bytes=").split("-")
@@ -293,66 +318,77 @@ class WebReceiverServer(
             }
 
             val contentLength = end - start + 1
-            val stream = cr.openInputStream(contentUri) ?: return newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Could not open stream"
-            )
+            val fis = FileInputStream(pfd.fileDescriptor)
 
-            // Reliably skip to start position
-            skipFully(stream, start)
+            // Hardware O(1) seek forward/backward in the file
+            fis.channel.position(start)
+
+            val boundedStream = object : InputStream() {
+                var bytesLeft = contentLength
+
+                override fun read(): Int {
+                    if (bytesLeft <= 0) return -1
+                    val b = fis.read()
+                    if (b != -1) bytesLeft--
+                    return b
+                }
+
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    if (bytesLeft <= 0) return -1
+                    val toRead = if (len > bytesLeft) bytesLeft.toInt() else len
+                    val read = fis.read(b, off, toRead)
+                    if (read > 0) bytesLeft -= read
+                    return read
+                }
+
+                override fun close() {
+                    try { fis.close() } catch (e: Exception) {}
+                    try { pfd.close() } catch (e: Exception) {}
+                }
+            }
 
             val response = newFixedLengthResponse(
                 Response.Status.PARTIAL_CONTENT,
                 mimeType,
-                stream,
+                boundedStream,
                 contentLength
             )
             response.addHeader("Content-Range", "bytes $start-$end/$fileLength")
             response.addHeader("Accept-Ranges", "bytes")
-            response.addHeader("Access-Control-Allow-Origin", "*")
+            response.addHeader("Content-Length", contentLength.toString())
             if (filename != null) {
                 response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
             }
-            return response
+            return withCors(response)
         }
 
-        // Full content response
-        val fullStream = cr.openInputStream(contentUri) ?: return newFixedLengthResponse(
-            Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Could not open stream"
-        )
+        // Full content response (when starting from beginning or no range header)
+        val fullStream = if (pfd != null) {
+            FileInputStream(pfd.fileDescriptor)
+        } else {
+            cr.openInputStream(contentUri) ?: return withCors(newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Cannot open stream"))
+        }
+
         val response = if (fileLength > 0) {
             newFixedLengthResponse(Response.Status.OK, mimeType, fullStream, fileLength)
         } else {
             newChunkedResponse(Response.Status.OK, mimeType, fullStream)
         }
         response.addHeader("Accept-Ranges", "bytes")
-        response.addHeader("Access-Control-Allow-Origin", "*")
+        if (fileLength > 0) {
+            response.addHeader("Content-Length", fileLength.toString())
+        }
         if (filename != null) {
             response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
         }
-        return response
+        return withCors(response)
     }
 
-    private fun skipFully(inStream: InputStream, bytesToSkip: Long) {
-        var remaining = bytesToSkip
-        while (remaining > 0) {
-            val skipped = inStream.skip(remaining)
-            if (skipped <= 0) {
-                if (inStream.read() == -1) break
-                remaining--
-            } else {
-                remaining -= skipped
-            }
-        }
-    }
-
-    /**
-     * Updates latest captured frame in memory buffer and broadcasts to WebSocket clients.
-     */
     fun onNewScreenFrame(frameData: ByteArray) {
         latestFrameBytes = frameData
         latestFrameTimestamp = System.currentTimeMillis()
 
-        // Also broadcast over WebSocket (thread-safely with error resilience)
+        // Push frame to WebSocket clients if connected
         for (client in connectedClients) {
             try {
                 if (client.isOpen) {
@@ -360,15 +396,10 @@ class WebReceiverServer(
                         client.send(frameData)
                     }
                 }
-            } catch (e: Exception) {
-                // Do not drop client on transient network hiccup
-            }
+            } catch (e: Exception) {}
         }
     }
 
-    /**
-     * Sends a thread-safe remote JSON control command to all connected TV Web Receivers.
-     */
     fun sendControlCommand(commandJson: JSONObject) {
         val payload = commandJson.toString()
         for (client in connectedClients) {
@@ -378,15 +409,10 @@ class WebReceiverServer(
                         client.send(payload)
                     }
                 }
-            } catch (e: Exception) {
-                // Ignore transient write error
-            }
+            } catch (e: Exception) {}
         }
     }
 
-    /**
-     * Casts a local video/photo directly to the TV Web Receiver.
-     */
     fun castMediaToTv(uri: Uri, mimeType: String, title: String) {
         currentMediaUri = uri
         currentMediaMimeType = mimeType
@@ -402,9 +428,6 @@ class WebReceiverServer(
         sendControlCommand(json)
     }
 
-    /**
-     * Updates mirroring status and notifies TV browser.
-     */
     fun setMirroringState(active: Boolean) {
         isMirroringActive = active
         val json = JSONObject().apply {
@@ -414,10 +437,6 @@ class WebReceiverServer(
         sendControlCommand(json)
     }
 
-    /**
-     * Switches the 16:9 aspect ratio mode on connected TVs.
-     * @param mode "cover" (16:9 zoom no bars), "stretch" (16:9 fill no bars), "fit" (contain)
-     */
     fun setTvAspectMode(mode: String) {
         currentAspectMode = mode
         val json = JSONObject().apply {
@@ -430,7 +449,6 @@ class WebReceiverServer(
     inner class ScreenWebSocket(handshake: IHTTPSession) : WebSocket(handshake) {
         override fun onOpen() {
             connectedClients.add(this)
-            // Immediately send current state upon connection
             try {
                 val stateJson = JSONObject().apply {
                     put("action", "init_state")
@@ -454,7 +472,6 @@ class WebReceiverServer(
         }
 
         override fun onMessage(message: WebSocketFrame?) {
-            // Heartbeat / ping from TV client
             if (message != null && message.textPayload == "ping") {
                 try {
                     synchronized(this) {
@@ -467,7 +484,6 @@ class WebReceiverServer(
         override fun onPong(pong: WebSocketFrame?) {}
 
         override fun onException(exception: java.io.IOException?) {
-            // Clean close on unrecoverable socket failure
             connectedClients.remove(this)
         }
     }
