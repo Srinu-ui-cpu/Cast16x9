@@ -68,6 +68,7 @@
         aspectMode = mode;
         mirrorWrapper.className = `aspect-${mode}`;
         screenStream.className = `aspect-${mode}`;
+        videoPlayer.className = `aspect-${mode}`;
 
         Object.keys(modeButtons).forEach(m => {
             modeButtons[m].classList.toggle('active', m === mode);

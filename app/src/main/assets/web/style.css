@@ -135,11 +135,15 @@ body.theme-dark {
     height: 100vh;
     display: block;
     z-index: 1;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: high-quality;
+    transform: translateZ(0);
 }
 
 /* Mode 1: 16:9 Cover / Zoom (No Black Bars, Preserves Aspect Ratio) */
 #mirror-wrapper.aspect-cover #screen-stream,
-#mirror-wrapper.aspect-cover #screen-canvas {
+#mirror-wrapper.aspect-cover #screen-canvas,
+#tv-video-player.aspect-cover {
     object-fit: cover !important;
     width: 100vw !important;
     height: 100vh !important;
@@ -147,7 +151,8 @@ body.theme-dark {
 
 /* Mode 2: 16:9 Stretch (No Black Bars, Edge to Edge) */
 #mirror-wrapper.aspect-stretch #screen-stream,
-#mirror-wrapper.aspect-stretch #screen-canvas {
+#mirror-wrapper.aspect-stretch #screen-canvas,
+#tv-video-player.aspect-stretch {
     object-fit: fill !important;
     width: 100vw !important;
     height: 100vh !important;
@@ -155,7 +160,8 @@ body.theme-dark {
 
 /* Mode 3: Original Fit (Contain) */
 #mirror-wrapper.aspect-fit #screen-stream,
-#mirror-wrapper.aspect-fit #screen-canvas {
+#mirror-wrapper.aspect-fit #screen-canvas,
+#tv-video-player.aspect-fit {
     object-fit: contain !important;
     width: 100vw !important;
     height: 100vh !important;
@@ -262,12 +268,14 @@ body.theme-dark {
     align-items: center;
 }
 
-#tv-video-player {
+#tv-video-player, #tv-photo-display {
     width: 100vw;
     height: 100vh;
     object-fit: contain;
     background: #000;
     z-index: 2;
+    image-rendering: high-quality;
+    transform: translateZ(0);
 }
 
 #photo-viewer {

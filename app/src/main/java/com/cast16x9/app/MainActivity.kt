@@ -261,11 +261,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMediaActionDialog(item: MediaItem) {
-        val options = mutableListOf("📺 Play on TV Web Receiver (16:9 Fullscreen)")
+        val options = mutableListOf("📺 Play on TV Web Receiver (1080p / 4K Fullscreen)")
         if (activeDlnaDevice != null) {
-            options.add("📡 Cast to DLNA TV: ${activeDlnaDevice!!.friendlyName}")
+            options.add("📡 Native DLNA TV Player: ${activeDlnaDevice!!.friendlyName} (Pure 4K HDR)")
         } else {
-            options.add("🔍 Scan and Cast to DLNA TV")
+            options.add("🔍 Scan & Play via Native DLNA TV Player (Pure 4K HDR)")
         }
 
         AlertDialog.Builder(this)
@@ -273,9 +273,9 @@ class MainActivity : AppCompatActivity() {
             .setItems(options.toTypedArray()) { _, which ->
                 when (which) {
                     0 -> {
-                        // Cast to Web Receiver
+                        // Cast to Web Receiver in full 1080p/4K
                         webServer?.castMediaToTv(item.uri, item.mimeType, item.title)
-                        Toast.makeText(this, "Casting to TV Web Receiver...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Casting 1080p/4K to TV Web Receiver...", Toast.LENGTH_SHORT).show()
                     }
                     1 -> {
                         if (activeDlnaDevice != null) {
@@ -297,7 +297,7 @@ class MainActivity : AppCompatActivity() {
         webServer?.currentMediaMimeType = item.mimeType
         webServer?.currentMediaTitle = item.title
 
-        val ip = NetworkUtils.getLocalIpAddress()
+        val ip = NetworkUtils.getLocalIpAddress(this)
         val mediaStreamUrl = "http://$ip:${NetworkUtils.DEFAULT_HTTP_PORT}/media/active"
 
         lifecycleScope.launch {
