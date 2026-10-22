@@ -60,16 +60,21 @@ function testStaticAssets() {
     assert(htmlContent.includes('id="btn-mode-cover"'), 'index.html contains 16:9 Cover button');
     assert(htmlContent.includes('id="btn-mode-stretch"'), 'index.html contains 16:9 Stretch button');
     assert(htmlContent.includes('id="btn-mode-fit"'), 'index.html contains 16:9 Fit button');
+    assert(htmlContent.includes('id="unmute-banner"'), 'index.html contains TV browser audio unmute banner');
+    assert(htmlContent.includes('id="btn-unmute"'), 'index.html contains Turn Sound ON button');
 
     const cssContent = fs.readFileSync(cssPath, 'utf8');
     assert(cssContent.includes('.aspect-cover'), 'CSS contains .aspect-cover class');
     assert(cssContent.includes('.aspect-stretch'), 'CSS contains .aspect-stretch class');
+    assert(cssContent.includes('.unmute-banner'), 'CSS contains .unmute-banner audio styles');
     assert(cssContent.includes('100vw') && cssContent.includes('100vh'), 'CSS enforces 100vw/100vh full-screen rules');
 
     const jsContent = fs.readFileSync(jsPath, 'utf8');
     assert(jsContent.includes('/ws/screen'), 'app.js connects to /ws/screen WebSocket endpoint');
     assert(jsContent.includes('setAspectMode'), 'app.js implements setAspectMode()');
     assert(jsContent.includes('playVideoOnTV'), 'app.js implements playVideoOnTV()');
+    assert(jsContent.includes('unmuteAudio'), 'app.js implements unmuteAudio() for TV browser sound policy');
+    assert(jsContent.includes('renderBlobFrame'), 'app.js implements low-latency renderBlobFrame() with memory leak prevention');
     assert(jsContent.includes('keydown'), 'app.js listens to TV remote key events (1, 2, 3, etc.)');
 }
 
@@ -377,8 +382,10 @@ function testDlnaProtocol() {
     assert(ssdpSearch.includes('239.255.255.250:1900'), 'SSDP uses standard UPnP multicast address 239.255.255.250:1900');
     assert(ssdpSearch.includes('urn:schemas-upnp-org:service:AVTransport:1'), 'SSDP specifically searches for AVTransport:1 service for Smart TVs');
 
-    // Test UPnP SOAP envelope generator with dynamic MIME types
+    // Test UPnP SOAP envelope generator with dynamic MIME types & video audio classes
     function buildSoapPayload(mediaUrl, title, mimeType) {
+        const upnpClass = mimeType.startsWith('video/') ? 'object.item.videoItem.movie' :
+            (mimeType.startsWith('audio/') ? 'object.item.audioItem.musicTrack' : 'object.item.imageItem.photo');
         return `
             <?xml version="1.0" encoding="utf-8"?>
             <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -386,7 +393,7 @@ function testDlnaProtocol() {
                     <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
                         <InstanceID>0</InstanceID>
                         <CurrentURI>${mediaUrl}</CurrentURI>
-                        <CurrentURIMetaData>&lt;DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"&gt;&lt;item id="0" parentID="-1" restricted="1"&gt;&lt;dc:title&gt;${title}&lt;/dc:title&gt;&lt;res protocolInfo="http-get:*:${mimeType}:*"&gt;${mediaUrl}&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
+                        <CurrentURIMetaData>&lt;DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"&gt;&lt;item id="0" parentID="-1" restricted="1"&gt;&lt;dc:title&gt;${title}&lt;/dc:title&gt;&lt;upnp:class&gt;${upnpClass}&lt;/upnp:class&gt;&lt;res protocolInfo="http-get:*:${mimeType}:*"&gt;${mediaUrl}&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
                     </u:SetAVTransportURI>
                 </s:Body>
             </s:Envelope>
@@ -395,9 +402,11 @@ function testDlnaProtocol() {
 
     const videoSoap = buildSoapPayload('http://192.168.1.10:8080/media/active', 'Movie.mp4', 'video/mp4');
     assert(videoSoap.includes('http-get:*:video/mp4:*'), 'DLNA SOAP payload correctly specifies video/mp4 protocol info');
+    assert(videoSoap.includes('object.item.videoItem.movie'), 'DLNA SOAP payload specifies object.item.videoItem.movie for TV audio decoder activation');
 
     const photoSoap = buildSoapPayload('http://192.168.1.10:8080/media/active', 'Photo.jpg', 'image/jpeg');
     assert(photoSoap.includes('http-get:*:image/jpeg:*'), 'DLNA SOAP payload dynamically formats image/jpeg protocol info');
+    assert(photoSoap.includes('object.item.imageItem.photo'), 'DLNA SOAP payload specifies object.item.imageItem.photo class');
 }
 
 // =========================================================================

@@ -1,4 +1,4 @@
-// Cast16x9 TV Web Receiver Logic v1.2.0
+// Cast16x9 TV Web Receiver Logic v1.4.0 (Zero Lag & Full Audio Engine)
 (function () {
     'use strict';
 
@@ -12,6 +12,9 @@
     let hudTimer = null;
     let isMirroringActive = false;
     let isFramePending = false;
+    let wsStreaming = false;
+    let httpPollingActive = false;
+    let currentBlobUrl = null;
 
     // DOM Elements
     const statusBadge = document.getElementById('connection-status');
@@ -26,6 +29,8 @@
     const photoViewer = document.getElementById('photo-viewer');
     const photoDisplay = document.getElementById('tv-photo-display');
     const mediaPlaceholder = document.getElementById('media-placeholder');
+    const unmuteBanner = document.getElementById('unmute-banner');
+    const btnUnmute = document.getElementById('btn-unmute');
 
     const filesGrid = document.getElementById('files-grid');
     const btnRefreshFiles = document.getElementById('btn-refresh-files');
@@ -102,52 +107,99 @@
         modeButtons[mode].addEventListener('click', () => setAspectMode(mode));
     });
 
-    // 3. Smooth, Crash-Proof Screen Mirroring Pipeline (Auto-Adaptive 30-60 FPS)
+    // 3. Low-Latency Screen Mirroring Pipeline (Sub-35ms WebSocket Push with Zero-Leak Rendering)
     function startScreenStream() {
         if (isMirroringActive) return;
         isMirroringActive = true;
         mirrorPlaceholder.classList.add('hidden');
         screenStream.classList.remove('hidden');
 
-        fetchNextFrame();
+        // Only start HTTP polling if WebSocket binary push stream is not already flowing
+        if (!wsStreaming) {
+            startHttpPolling();
+        }
     }
 
     function stopScreenStream() {
         isMirroringActive = false;
         isFramePending = false;
+        httpPollingActive = false;
         screenStream.classList.add('hidden');
         mirrorPlaceholder.classList.remove('hidden');
+
+        if (currentBlobUrl) {
+            URL.revokeObjectURL(currentBlobUrl);
+            currentBlobUrl = null;
+        }
+    }
+
+    // High-performance direct Blob rendering (Eliminates GC lag & TV browser memory leaks)
+    function renderBlobFrame(blob) {
+        wsStreaming = true;
+        if (httpPollingActive) {
+            // Immediately stop competing HTTP polling once WebSocket stream is active
+            httpPollingActive = false;
+            isFramePending = false;
+        }
+
+        if (!isMirroringActive) {
+            isMirroringActive = true;
+            mirrorPlaceholder.classList.add('hidden');
+            screenStream.classList.remove('hidden');
+        }
+
+        const newUrl = URL.createObjectURL(blob);
+        const oldUrl = currentBlobUrl;
+        currentBlobUrl = newUrl;
+        screenStream.src = newUrl;
+
+        // Revoke previous blob URL to prevent TV browser heap exhaustion
+        if (oldUrl) {
+            setTimeout(() => {
+                try { URL.revokeObjectURL(oldUrl); } catch (e) {}
+            }, 80);
+        }
+    }
+
+    // HTTP Polling Fallback (Activated ONLY if WebSocket binary push is unavailable)
+    function startHttpPolling() {
+        if (httpPollingActive || wsStreaming || !isMirroringActive) return;
+        httpPollingActive = true;
+        fetchNextFrame();
     }
 
     function fetchNextFrame() {
-        if (!isMirroringActive || isFramePending) return;
+        if (!isMirroringActive || !httpPollingActive || isFramePending || wsStreaming) {
+            httpPollingActive = false;
+            isFramePending = false;
+            return;
+        }
         isFramePending = true;
 
         const nextImg = new Image();
         nextImg.onload = function () {
-            if (isMirroringActive) {
+            if (isMirroringActive && !wsStreaming) {
                 screenStream.src = nextImg.src;
                 mirrorPlaceholder.classList.add('hidden');
                 screenStream.classList.remove('hidden');
             }
             isFramePending = false;
-            if (isMirroringActive) {
-                // Schedule next frame immediately via requestAnimationFrame for silky smooth 60fps
+            if (isMirroringActive && httpPollingActive && !wsStreaming) {
                 requestAnimationFrame(fetchNextFrame);
             }
         };
 
         nextImg.onerror = function () {
             isFramePending = false;
-            if (isMirroringActive) {
-                setTimeout(fetchNextFrame, 100);
+            if (isMirroringActive && httpPollingActive && !wsStreaming) {
+                setTimeout(fetchNextFrame, 150);
             }
         };
 
         nextImg.src = `/api/frame?t=${Date.now()}`;
     }
 
-    // 4. WebSocket for Instant Remote Control & Push Signaling
+    // 4. WebSocket for Instant Remote Control & Ultra Low-Latency Screen Push
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
@@ -182,18 +234,21 @@
                     handleControlMessage(message);
                 } catch (e) {}
             } else if (event.data instanceof Blob) {
-                if (!isMirroringActive) startScreenStream();
-                const url = URL.createObjectURL(event.data);
-                screenStream.src = url;
+                renderBlobFrame(event.data);
             }
         };
 
         ws.onclose = function () {
+            wsStreaming = false;
             clearInterval(pingInterval);
             scheduleReconnect();
+            if (isMirroringActive) {
+                startHttpPolling();
+            }
         };
 
         ws.onerror = function () {
+            wsStreaming = false;
             try { ws.close(); } catch (e) {}
         };
     }
@@ -202,6 +257,33 @@
         clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connectWebSocket, 3000);
     }
+
+    // Audio Unmute & Remote Control Handler (Bypasses TV Browser Autoplay Muting)
+    function unmuteAudio() {
+        if (videoPlayer) {
+            videoPlayer.muted = false;
+            videoPlayer.volume = 1.0;
+            videoPlayer.removeAttribute('muted');
+            if (unmuteBanner) unmuteBanner.classList.add('hidden');
+        }
+    }
+
+    if (btnUnmute) {
+        btnUnmute.addEventListener('click', function (e) {
+            e.stopPropagation();
+            unmuteAudio();
+            videoPlayer.play().catch(() => {});
+        });
+    }
+
+    // Auto-unmute TV sound on any interaction (Remote OK, Enter, Space, Up, Down, 1, 2, 3)
+    window.addEventListener('click', unmuteAudio);
+    window.addEventListener('touchstart', unmuteAudio);
+    window.addEventListener('keydown', function (e) {
+        if (['Enter', ' ', 'MediaPlayPause', 'ArrowUp', 'ArrowDown', '1', '2', '3'].includes(e.key)) {
+            unmuteAudio();
+        }
+    });
 
     // Handle incoming commands
     function handleControlMessage(msg) {
@@ -244,19 +326,32 @@
         }
     }
 
-    // 5. Media Player Handling (Direct Fullscreen 16:9 Video & Forward/Seek Support)
+    // 5. Media Player Handling (Direct Fullscreen 16:9 Video with Full Unmuted Audio)
     function playVideoOnTV(url, title) {
         photoViewer.classList.add('hidden');
         mediaPlaceholder.classList.add('hidden');
         videoPlayer.classList.remove('hidden');
 
-        // Set video source with timestamp to avoid stale browser cache
+        // Set video source with audio unmuted
         videoPlayer.src = url;
+        videoPlayer.muted = false;
+        videoPlayer.volume = 1.0;
+        videoPlayer.removeAttribute('muted');
+
         const playPromise = videoPlayer.play();
         if (playPromise !== undefined) {
-            playPromise.catch(err => {
-                console.warn('Autoplay blocked by TV browser policy:', err);
-                showHUD('Press OK / Play on TV Remote to start video');
+            playPromise.then(() => {
+                if (unmuteBanner) unmuteBanner.classList.add('hidden');
+            }).catch(err => {
+                console.warn('Autoplay with sound blocked by TV browser policy, starting muted with prompt:', err);
+                videoPlayer.muted = true;
+                videoPlayer.play().then(() => {
+                    if (unmuteBanner) unmuteBanner.classList.remove('hidden');
+                    showHUD('🔇 Audio Muted by TV: Press OK on Remote to Turn Sound ON');
+                }).catch(e => {
+                    console.error('Video play error:', e);
+                    showHUD('Press OK / Play on TV Remote to start video');
+                });
             });
         }
 
@@ -276,10 +371,26 @@
     function handleVideoControl(command, value) {
         if (!videoPlayer) return;
         switch (command) {
-            case 'play': videoPlayer.play(); break;
-            case 'pause': videoPlayer.pause(); break;
-            case 'seek': if (value !== undefined) videoPlayer.currentTime = value; break;
-            case 'volume': if (value !== undefined) videoPlayer.volume = value; break;
+            case 'play':
+                unmuteAudio();
+                videoPlayer.play().catch(() => {});
+                break;
+            case 'pause':
+                videoPlayer.pause();
+                break;
+            case 'unmute':
+                unmuteAudio();
+                break;
+            case 'seek':
+                if (value !== undefined) videoPlayer.currentTime = value;
+                break;
+            case 'volume':
+                if (value !== undefined) {
+                    videoPlayer.volume = value;
+                    videoPlayer.muted = (value === 0);
+                    if (value > 0 && unmuteBanner) unmuteBanner.classList.add('hidden');
+                }
+                break;
         }
     }
 

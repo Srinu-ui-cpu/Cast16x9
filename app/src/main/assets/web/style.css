@@ -293,6 +293,51 @@ body.theme-dark {
     object-fit: contain;
 }
 
+/* TV Browser Audio Unmute Floating Prompt */
+.unmute-banner {
+    position: absolute;
+    bottom: 80px;
+    background: rgba(22, 27, 34, 0.95);
+    border: 2px solid #58a6ff;
+    box-shadow: 0 0 30px rgba(88, 166, 255, 0.6);
+    border-radius: 14px;
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    z-index: 100;
+}
+
+.unmute-banner.hidden {
+    display: none !important;
+}
+
+.unmute-banner span {
+    color: #f0f6fc;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.btn-unmute {
+    background: #238636;
+    color: #ffffff;
+    border: 1px solid #3fb950;
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(35, 134, 54, 0.4);
+    transition: transform 0.2s, background 0.2s;
+}
+
+.btn-unmute:hover, .btn-unmute:focus {
+    background: #2ea043;
+    transform: scale(1.05);
+    outline: none;
+    box-shadow: 0 0 14px #3fb950;
+}
+
 /* File Sharing Section */
 #section-files {
     padding: 32px;

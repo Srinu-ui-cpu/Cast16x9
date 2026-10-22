@@ -424,6 +424,7 @@ class WebReceiverServer(
             put("url", "/media/active")
             put("title", title)
             put("isVideo", isVideo)
+            put("unmute", true)
         }
         sendControlCommand(json)
     }
