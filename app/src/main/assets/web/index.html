@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=1920, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>Cast16x9 - Full TV Web Receiver</title>
+    <title>Cast16x9 V2 Pro - Full TV Web Receiver</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-dark">
@@ -13,7 +13,7 @@
     <header id="tv-header" class="tv-bar">
         <div class="brand">
             <span class="logo-icon">📺</span>
-            <span class="brand-title">Cast<span class="highlight">16:9</span> TV Receiver</span>
+            <span class="brand-title">Cast<span class="highlight">16:9</span> <span class="badge-v2">V2 PRO</span></span>
             <span id="connection-status" class="badge badge-disconnected">Connecting...</span>
         </div>
         <div class="nav-tabs" role="tablist">
@@ -29,21 +29,36 @@
 
         <!-- 1. Screen Mirroring Section -->
         <section id="section-mirror" class="view-section active">
-            <div id="mirror-wrapper" class="aspect-cover">
+            <div id="mirror-wrapper" class="aspect-ambient">
+                <!-- Dynamic Real-Time Ambient Wings (Fills 16:9 TV sides with phone screen colors, zero black bars) -->
+                <canvas id="ambient-canvas"></canvas>
+
                 <!-- Hardware-Accelerated 16:9 Live Screen Stream -->
                 <img id="screen-stream" class="hidden" alt="Live 16:9 Screen Stream" />
                 <canvas id="screen-canvas" class="hidden"></canvas>
+
+                <!-- Floating On-Screen TV Zoom & Scale Adjuster Bar -->
+                <div id="zoom-control-bar" class="zoom-control-bar">
+                    <span class="zoom-icon">🔍</span>
+                    <span class="zoom-label">Zoom:</span>
+                    <button id="btn-zoom-tv-minus" class="zoom-btn" tabindex="8" title="Zoom Out (−5%)">−</button>
+                    <input type="range" id="tv-zoom-slider" min="50" max="150" value="100" class="zoom-slider" tabindex="9" />
+                    <button id="btn-zoom-tv-plus" class="zoom-btn" tabindex="10" title="Zoom In (+5%)">+</button>
+                    <span id="tv-zoom-val" class="zoom-val">100%</span>
+                    <button id="btn-zoom-tv-reset" class="zoom-reset-btn" tabindex="11">Reset</button>
+                </div>
 
                 <!-- Standby / Idle Card -->
                 <div id="mirror-placeholder" class="placeholder-card">
                     <div class="pulse-ring"></div>
                     <div class="icon-tv">📡</div>
                     <h2>Ready to Mirror Screen in Full 16:9</h2>
-                    <p>Open the <strong>Cast16x9 App</strong> on your Phone or Smartwatch and tap <strong>"Start Screen Mirroring"</strong></p>
+                    <p>Open the <strong>Cast16x9 V2 Pro</strong> app on your Phone and tap <strong>"Start Screen Mirroring"</strong></p>
                     <div class="mode-info-box">
-                        <span>Active Mode: <strong id="active-mode-name">Cover / Zoom (16:9 No Black Bars)</strong></span>
+                        <span>Active Mode: <strong id="active-mode-name">✨ Ambient Canvas (100% Full Phone Screen, No Crop)</strong></span>
                         <div class="btn-group">
-                            <button id="btn-mode-cover" class="mode-btn active" tabindex="5">Cover (16:9 Zoom)</button>
+                            <button id="btn-mode-ambient" class="mode-btn active" tabindex="4">✨ Ambient (No Crop)</button>
+                            <button id="btn-mode-cover" class="mode-btn" tabindex="5">Cover (16:9 Zoom)</button>
                             <button id="btn-mode-stretch" class="mode-btn" tabindex="6">Stretch (16:9 Fill)</button>
                             <button id="btn-mode-fit" class="mode-btn" tabindex="7">Fit (Original)</button>
                         </div>
@@ -119,29 +134,36 @@
         <!-- 4. Quick Help & Aspect Controls -->
         <section id="section-settings" class="view-section">
             <div class="settings-card">
-                <h2>📺 16:9 Aspect Ratio Guide for Smartwatches & Phones</h2>
+                <h2>📺 16:9 Display &amp; Zoom Guide for Phones &amp; TVs</h2>
                 <div class="features-grid">
                     <div class="feature-card">
+                        <h3>✨ 16:9 Ambient Canvas Mode (Default)</h3>
+                        <p>Shows <strong>100% of your phone screen</strong> with zero cropping, keeping status bar, apps, and navigation bar fully visible. Soft, matching ambient light fills TV side wings with zero black bars.</p>
+                    </div>
+                    <div class="feature-card">
                         <h3>🟢 16:9 Zoom / Cover Mode</h3>
-                        <p>Perfect for <strong>Smartwatches (1:1)</strong> and <strong>Modern Phones (20:9)</strong>. Fills 100% of the TV screen without distortion or stretching. Eliminates side/top black bars entirely.</p>
+                        <p>Scales content to fill the TV width. Ideal for full screen landscape videos and games.</p>
                     </div>
                     <div class="feature-card">
                         <h3>🔵 16:9 Stretch Mode</h3>
-                        <p>Stretches the entire phone or watch screen edge-to-edge across the 16:9 TV display so no pixels or buttons are cropped.</p>
+                        <p>Stretches the screen edge-to-edge across the 16:9 TV display.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>⚪ Original Fit Mode</h3>
-                        <p>Preserves native aspect ratio with traditional black bars for exact 1:1 pixel testing.</p>
+                        <h3>🔍 Interactive Zoom Slider</h3>
+                        <p>Adjust scale dynamically between 50% and 150% from either the TV remote or mobile app slider.</p>
                     </div>
                 </div>
                 <div class="remote-shortcuts">
                     <h3>🎮 TV Remote Shortcuts</h3>
                     <ul>
-                        <li><kbd>Key 1</kbd>: Switch to 16:9 Zoom (No Bars)</li>
-                        <li><kbd>Key 2</kbd>: Switch to 16:9 Stretch (No Bars)</li>
-                        <li><kbd>Key 3</kbd>: Switch to Original Fit</li>
+                        <li><kbd>Key 1</kbd>: 16:9 Ambient Canvas (100% Phone, No Crop)</li>
+                        <li><kbd>Key 2</kbd>: 16:9 Zoom / Cover (Fills Width)</li>
+                        <li><kbd>Key 3</kbd>: 16:9 Stretch / Fill (Edge to Edge)</li>
+                        <li><kbd>Key 4</kbd> / <kbd>−</kbd>: Zoom Out (−5%)</li>
+                        <li><kbd>Key 5</kbd> / <kbd>+</kbd>: Zoom In (+5%)</li>
+                        <li><kbd>Key 0</kbd>: Reset Zoom to 100%</li>
                         <li><kbd>Key F</kbd>: Toggle Fullscreen</li>
-                        <li><kbd>Esc</kbd> / <kbd>Backspace</kbd> / <kbd>C</kbd> / <kbd>0</kbd>: Cancel Video &amp; Free TV Space</li>
+                        <li><kbd>Esc</kbd> / <kbd>Backspace</kbd> / <kbd>C</kbd>: Cancel Video &amp; Free TV Space</li>
                         <li><kbd>Left</kbd> / <kbd>Right</kbd>: Smooth 10s Seek</li>
                     </ul>
                 </div>
@@ -152,8 +174,8 @@
 
     <!-- Bottom Status Bar -->
     <footer id="tv-footer">
-        <span id="footer-left">Press <kbd>1</kbd>, <kbd>2</kbd>, or <kbd>3</kbd> for 16:9 modes | <kbd>Esc</kbd> or <kbd>C</kbd> to Cancel Video</span>
-        <span id="footer-right">Cast16x9 v2.0.0</span>
+        <span id="footer-left">Press <kbd>1</kbd>–<kbd>3</kbd> for 16:9 modes | <kbd>4</kbd>/<kbd>5</kbd> for Zoom | <kbd>Esc</kbd> or <kbd>C</kbd> to Cancel Video</span>
+        <span id="footer-right">Cast16x9 V2 Pro</span>
     </footer>
 
     <script src="app.js"></script>

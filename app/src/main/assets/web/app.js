@@ -1,11 +1,15 @@
-// Cast16x9 TV Web Receiver Logic v1.4.0 (Zero Lag & Full Audio Engine)
+// Cast16x9 TV Web Receiver Logic v2.1.0 Pro (16:9 Ambient Canvas, Audio Mirroring, Zoom Adjuster)
 (function () {
     'use strict';
 
     // State
     let activeTab = 'mirror';
-    let aspectMode = 'cover'; // 'cover' (16:9 zoom no bars), 'stretch' (16:9 fill no bars), 'fit' (contain)
+    let aspectMode = 'ambient'; // 'ambient' (100% phone, blurred wings), 'cover', 'stretch', 'fit'
+    let zoomLevel = 100; // 50% to 150%
     let ws = null;
+    let audioWs = null;
+    let audioContext = null;
+    let nextAudioPlayTime = 0;
     let reconnectTimer = null;
     let pingInterval = null;
     let statusSyncInterval = null;
@@ -19,11 +23,21 @@
     // DOM Elements
     const statusBadge = document.getElementById('connection-status');
     const mirrorWrapper = document.getElementById('mirror-wrapper');
+    const ambientCanvas = document.getElementById('ambient-canvas');
+    const ambientCtx = ambientCanvas ? ambientCanvas.getContext('2d') : null;
     const screenStream = document.getElementById('screen-stream');
     const mirrorPlaceholder = document.getElementById('mirror-placeholder');
     const activeModeName = document.getElementById('active-mode-name');
     const hudOverlay = document.getElementById('hud-overlay');
     const hudText = document.getElementById('hud-text');
+
+    // Zoom Adjuster Elements
+    const zoomControlBar = document.getElementById('zoom-control-bar');
+    const tvZoomSlider = document.getElementById('tv-zoom-slider');
+    const tvZoomVal = document.getElementById('tv-zoom-val');
+    const btnZoomTvMinus = document.getElementById('btn-zoom-tv-minus');
+    const btnZoomTvPlus = document.getElementById('btn-zoom-tv-plus');
+    const btnZoomTvReset = document.getElementById('btn-zoom-tv-reset');
 
     const videoPlayer = document.getElementById('tv-video-player');
     const photoViewer = document.getElementById('photo-viewer');
@@ -51,6 +65,7 @@
     };
 
     const modeButtons = {
+        ambient: document.getElementById('btn-mode-ambient'),
         cover: document.getElementById('btn-mode-cover'),
         stretch: document.getElementById('btn-mode-stretch'),
         fit: document.getElementById('btn-mode-fit')
@@ -76,7 +91,7 @@
         tabs[key].btn.addEventListener('click', () => switchTab(key));
     });
 
-    // 2. Aspect Ratio Transformation (16:9 Zero Black Bars)
+    // 2. Aspect Ratio Transformation (16:9 Zero Black Bars & Ambient Wings)
     function setAspectMode(mode, showNotification = true) {
         aspectMode = mode;
         mirrorWrapper.className = `aspect-${mode}`;
@@ -84,12 +99,15 @@
         videoPlayer.className = `aspect-${mode}`;
 
         Object.keys(modeButtons).forEach(m => {
-            modeButtons[m].classList.toggle('active', m === mode);
+            if (modeButtons[m]) {
+                modeButtons[m].classList.toggle('active', m === mode);
+            }
         });
 
         const descriptions = {
-            cover: '16:9 Cover / Zoom (No Black Bars, Original Proportions)',
-            stretch: '16:9 Stretch / Fill (No Black Bars, Edge-to-Edge)',
+            ambient: '✨ 16:9 Ambient Canvas (100% Phone Screen, No Crop)',
+            cover: '16:9 Cover / Zoom (Fills Width)',
+            stretch: '16:9 Stretch / Fill (Edge to Edge)',
             fit: 'Original Aspect Ratio (With Black Bars)'
         };
 
@@ -98,8 +116,46 @@
         }
 
         if (showNotification) {
-            showHUD(`Aspect Ratio: ${descriptions[mode] || mode}`);
+            showHUD(`Display Mode: ${descriptions[mode] || mode}`);
         }
+    }
+
+    // 2b. Interactive Zoom & Scale Adjustment (50% to 150%)
+    function setZoomLevel(zoom, notifyServer = true) {
+        zoomLevel = Math.max(50, Math.min(150, Math.round(zoom)));
+        document.documentElement.style.setProperty('--tv-zoom-scale', (zoomLevel / 100).toString());
+        if (tvZoomSlider) tvZoomSlider.value = zoomLevel;
+        if (tvZoomVal) tvZoomVal.textContent = zoomLevel + '%';
+
+        if (notifyServer && ws && ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send(JSON.stringify({
+                    action: 'set_zoom',
+                    zoom: zoomLevel
+                }));
+            } catch (e) {}
+        }
+    }
+
+    if (tvZoomSlider) {
+        tvZoomSlider.addEventListener('input', function () {
+            setZoomLevel(parseInt(this.value, 10), true);
+        });
+    }
+    if (btnZoomTvMinus) {
+        btnZoomTvMinus.addEventListener('click', function () {
+            setZoomLevel(zoomLevel - 5, true);
+        });
+    }
+    if (btnZoomTvPlus) {
+        btnZoomTvPlus.addEventListener('click', function () {
+            setZoomLevel(zoomLevel + 5, true);
+        });
+    }
+    if (btnZoomTvReset) {
+        btnZoomTvReset.addEventListener('click', function () {
+            setZoomLevel(100, true);
+        });
     }
 
     function showHUD(message) {
@@ -112,7 +168,9 @@
     }
 
     Object.keys(modeButtons).forEach(mode => {
-        modeButtons[mode].addEventListener('click', () => setAspectMode(mode));
+        if (modeButtons[mode]) {
+            modeButtons[mode].addEventListener('click', () => setAspectMode(mode));
+        }
     });
 
     // 3. Low-Latency Screen Mirroring Pipeline (Sub-35ms WebSocket Push with Zero-Leak Rendering)
@@ -167,6 +225,96 @@
                 try { URL.revokeObjectURL(oldUrl); } catch (e) {}
             }, 80);
         }
+    }
+
+    // Mirror current frame into Ambient Canvas for dynamic blurred side-glow
+    screenStream.onload = function () {
+        if (aspectMode === 'ambient' && ambientCanvas && ambientCtx) {
+            try {
+                if (ambientCanvas.width !== 160) {
+                    ambientCanvas.width = 160;
+                    ambientCanvas.height = 90;
+                }
+                ambientCtx.drawImage(screenStream, 0, 0, 160, 90);
+            } catch (e) {}
+        }
+    };
+
+    // 3b. Real-Time Audio Streaming Engine (Web Audio API & AudioPlaybackCapture PCM)
+    function initAudioEngine() {
+        if (!audioContext) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) {
+                audioContext = new AudioContextClass({ sampleRate: 44100 });
+            }
+        }
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+        }
+    }
+
+    function connectAudioWebSocket() {
+        if (audioWs && (audioWs.readyState === WebSocket.OPEN || audioWs.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+        const host = window.location.host;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const audioUrl = `${protocol}//${host}/ws/audio`;
+
+        try {
+            audioWs = new WebSocket(audioUrl);
+            audioWs.binaryType = 'arraybuffer';
+
+            audioWs.onopen = function () {
+                console.log('Audio WebSocket connected');
+            };
+
+            audioWs.onmessage = function (event) {
+                if (event.data instanceof ArrayBuffer) {
+                    playPcmChunk(event.data);
+                }
+            };
+
+            audioWs.onclose = function () {
+                setTimeout(connectAudioWebSocket, 3000);
+            };
+
+            audioWs.onerror = function () {
+                try { audioWs.close(); } catch (e) {}
+            };
+        } catch (e) {
+            console.warn('Audio WS init error:', e);
+        }
+    }
+
+    function playPcmChunk(arrayBuffer) {
+        initAudioEngine();
+        if (!audioContext || audioContext.state !== 'running') return;
+
+        // 16-bit PCM Stereo (2 channels, 44100Hz)
+        const int16Array = new Int16Array(arrayBuffer);
+        const numSamples = Math.floor(int16Array.length / 2);
+        if (numSamples <= 0) return;
+
+        const audioBuffer = audioContext.createBuffer(2, numSamples, 44100);
+        const channel0 = audioBuffer.getChannelData(0);
+        const channel1 = audioBuffer.getChannelData(1);
+
+        for (let i = 0; i < numSamples; i++) {
+            channel0[i] = int16Array[i * 2] / 32768.0;
+            channel1[i] = int16Array[i * 2 + 1] / 32768.0;
+        }
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+
+        const currentTime = audioContext.currentTime;
+        if (nextAudioPlayTime < currentTime) {
+            nextAudioPlayTime = currentTime + 0.02;
+        }
+        source.start(nextAudioPlayTime);
+        nextAudioPlayTime += audioBuffer.duration;
     }
 
     // HTTP Polling Fallback (Activated ONLY if WebSocket binary push is unavailable)
@@ -268,6 +416,7 @@
 
     // Audio Unmute & Remote Control Handler (Bypasses TV Browser Autoplay Muting)
     function unmuteAudio() {
+        initAudioEngine();
         if (videoPlayer) {
             videoPlayer.muted = false;
             videoPlayer.volume = 1.0;
@@ -284,11 +433,11 @@
         });
     }
 
-    // Auto-unmute TV sound on any interaction (Remote OK, Enter, Space, Up, Down, 1, 2, 3)
+    // Auto-unmute TV sound on any interaction (Remote OK, Enter, Space, Up, Down, 1, 2, 3, 4, 5)
     window.addEventListener('click', unmuteAudio);
     window.addEventListener('touchstart', unmuteAudio);
     window.addEventListener('keydown', function (e) {
-        if (['Enter', ' ', 'MediaPlayPause', 'ArrowUp', 'ArrowDown', '1', '2', '3'].includes(e.key)) {
+        if (['Enter', ' ', 'MediaPlayPause', 'ArrowUp', 'ArrowDown', '1', '2', '3', '4', '5'].includes(e.key)) {
             unmuteAudio();
         }
     });
@@ -299,6 +448,7 @@
         switch (msg.action) {
             case 'init_state':
                 if (msg.aspectMode) setAspectMode(msg.aspectMode, false);
+                if (typeof msg.zoomLevel === 'number') setZoomLevel(msg.zoomLevel, false);
                 if (msg.isMirroring) startScreenStream();
                 if (msg.hasMedia && msg.mediaUrl) {
                     // CRITICAL GUARD: Never reload or interrupt video if it is already loaded or playing!
@@ -321,6 +471,9 @@
                 break;
             case 'set_aspect':
                 if (msg.mode) setAspectMode(msg.mode);
+                break;
+            case 'set_zoom':
+                if (typeof msg.zoom === 'number') setZoomLevel(msg.zoom, false);
                 break;
             case 'play_video':
                 switchTab('media');
@@ -788,6 +941,9 @@
                 if (data.aspectMode && data.aspectMode !== aspectMode) {
                     setAspectMode(data.aspectMode, false);
                 }
+                if (typeof data.zoomLevel === 'number' && data.zoomLevel !== zoomLevel) {
+                    setZoomLevel(data.zoomLevel, false);
+                }
 
                 if (data.hasMedia && data.activeMedia && videoPlayer.paused && videoPlayer.classList.contains('hidden')) {
                     if (data.activeMedia.isVideo) {
@@ -939,9 +1095,25 @@
         }
 
         switch (e.key) {
-            case '1': setAspectMode('cover'); break;
-            case '2': setAspectMode('stretch'); break;
-            case '3': setAspectMode('fit'); break;
+            case '1': setAspectMode('ambient'); break;
+            case '2': setAspectMode('cover'); break;
+            case '3': setAspectMode('stretch'); break;
+            case '4':
+            case '-':
+            case '_':
+                setZoomLevel(zoomLevel - 5, true);
+                showHUD(`Zoom: ${zoomLevel}%`);
+                break;
+            case '5':
+            case '+':
+            case '=':
+                setZoomLevel(zoomLevel + 5, true);
+                showHUD(`Zoom: ${zoomLevel}%`);
+                break;
+            case '0':
+                setZoomLevel(100, true);
+                showHUD(`Zoom Reset: 100%`);
+                break;
             case 'f':
             case 'F': toggleFullscreen(); break;
         }
@@ -963,8 +1135,10 @@
     }
 
     // Initialize
-    setAspectMode('cover', false);
+    setAspectMode('ambient', false);
+    setZoomLevel(100, false);
     connectWebSocket();
+    connectAudioWebSocket();
     syncServerStatus();
     statusSyncInterval = setInterval(syncServerStatus, 1500);
 

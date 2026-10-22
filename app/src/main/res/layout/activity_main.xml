@@ -93,7 +93,7 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- 16:9 Aspect Ratio Selector (Cover / Stretch / Fit) -->
+                <!-- 16:9 Aspect Ratio Selector (Ambient / Cover / Stretch / Fit) -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -124,18 +124,25 @@
                             android:layout_height="wrap_content">
 
                             <RadioButton
+                                android:id="@+id/rb_ambient"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="✨ 16:9 Ambient Canvas (100% Full Phone Screen, No Crop)"
+                                android:textColor="@color/text_primary"
+                                android:checked="true" />
+
+                            <RadioButton
                                 android:id="@+id/rb_cover"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="🟢 16:9 Zoom / Cover (No Black Bars)"
-                                android:textColor="@color/text_primary"
-                                android:checked="true" />
+                                android:text="🟢 16:9 Zoom / Cover (Fills Width)"
+                                android:textColor="@color/text_primary" />
 
                             <RadioButton
                                 android:id="@+id/rb_stretch"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="🔵 16:9 Stretch / Fill (No Black Bars)"
+                                android:text="🔵 16:9 Stretch / Fill (Edge to Edge)"
                                 android:textColor="@color/text_primary" />
 
                             <RadioButton
@@ -149,10 +156,175 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="* Smartwatches (1:1) and tall phones (20:9) fill the entire 16:9 TV screen without side black bars!"
+                            android:text="* Ambient Canvas shows your ENTIRE phone screen with 0% cropping, filling TV side borders with dynamic matching ambient light."
                             android:textColor="@color/text_secondary"
                             android:textSize="12sp"
                             android:layout_marginTop="8dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Interactive 16:9 Zoom & Scale Adjuster Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="@color/card_background"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1dp"
+                    app:cardCornerRadius="14dp"
+                    android:layout_marginBottom="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="🔍 Screen Zoom &amp; Scale:"
+                                android:textColor="@color/text_primary"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_zoom_level"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="100%"
+                                android:textColor="@color/text_highlight"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="8dp">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_zoom_minus"
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:text="−"
+                                android:textSize="18sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:padding="0dp"
+                                app:backgroundTint="#21262D"
+                                app:strokeColor="@color/card_border"
+                                app:strokeWidth="1dp" />
+
+                            <SeekBar
+                                android:id="@+id/sb_zoom"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:max="150"
+                                android:progress="100"
+                                android:layout_marginStart="8dp"
+                                android:layout_marginEnd="8dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_zoom_plus"
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:text="+"
+                                android:textSize="18sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:padding="0dp"
+                                app:backgroundTint="#21262D"
+                                app:strokeColor="@color/card_border"
+                                app:strokeWidth="1dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_zoom_reset"
+                                android:layout_width="wrap_content"
+                                android:layout_height="44dp"
+                                android:text="Reset"
+                                android:textSize="12sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:layout_marginStart="8dp"
+                                app:backgroundTint="#21262D"
+                                app:strokeColor="@color/card_border"
+                                app:strokeWidth="1dp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Adjust zoom slider (50% to 150%) to fit any TV size or eliminate margins."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="6dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Audio Mirroring & Private Listening Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="@color/card_background"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1dp"
+                    app:cardCornerRadius="14dp"
+                    android:layout_marginBottom="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="🔊 Mirror Audio to TV:"
+                                android:textColor="@color/text_primary"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <com.google.android.material.switchmaterial.SwitchMaterial
+                                android:id="@+id/switch_tv_audio"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tv_audio_mode_desc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔊 Streaming game, video &amp; app sound directly to TV speakers."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp"
+                            android:layout_marginTop="4dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="* Turn off switch for 'Private Listening' (sound plays via phone / Bluetooth earphones)."
+                            android:textColor="@color/text_highlight"
+                            android:textSize="11sp"
+                            android:layout_marginTop="4dp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 

@@ -14,6 +14,10 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
+import android.media.AudioRecord
 import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
@@ -36,9 +40,14 @@ class ScreenCaptureService : Service() {
     private var handlerThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
 
+    // Real-Time Audio Capture Engine (Stereo System Audio via AudioPlaybackCapture)
+    private var audioRecord: AudioRecord? = null
+    private var audioThread: Thread? = null
+    @Volatile private var isAudioCapturing = false
+
     private var isCapturing = false
     private var lastFrameTime = 0L
-    private val frameIntervalMs = 33L // ~30 fps target
+    private val frameIntervalMs = 16L // ~60 fps target for real-time low-latency mirroring (<45ms)
 
     // High-performance reusable frame buffers (Eliminates GC pauses & lag)
     private var reusableFullBitmap: Bitmap? = null
@@ -166,6 +175,11 @@ class ScreenCaptureService : Service() {
         isCapturing = true
         serverInstance?.setMirroringState(true)
 
+        // Launch low-latency system audio capture
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mediaProjection != null) {
+            startAudioCapture(mediaProjection!!)
+        }
+
         imageReader?.setOnImageAvailableListener({ reader ->
             if (isEncoding) {
                 // Drop frame immediately if previous frame is still encoding/transmitting.
@@ -234,8 +248,66 @@ class ScreenCaptureService : Service() {
         }, backgroundHandler)
     }
 
+    private fun startAudioCapture(projection: MediaProjection) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        try {
+            val config = AudioPlaybackCaptureConfiguration.Builder(projection)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                .build()
+
+            val sampleRate = 44100
+            val channelMask = AudioFormat.CHANNEL_IN_STEREO
+            val encoding = AudioFormat.ENCODING_PCM_16BIT
+            val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelMask, encoding)
+            val bufferSize = maxOf(minBufferSize, 8192)
+
+            val record = AudioRecord.Builder()
+                .setAudioPlaybackCaptureConfig(config)
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(encoding)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(channelMask)
+                        .build()
+                )
+                .setBufferSizeInBytes(bufferSize)
+                .build()
+
+            audioRecord = record
+            record.startRecording()
+            isAudioCapturing = true
+
+            audioThread = Thread({
+                val buffer = ByteArray(4096)
+                while (isAudioCapturing) {
+                    val read = record.read(buffer, 0, buffer.size)
+                    if (read > 0) {
+                        val pcmData = buffer.copyOf(read)
+                        serverInstance?.onNewAudioChunk(pcmData)
+                    }
+                }
+            }, "ScreenAudioCaptureThread").apply { start() }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun stopAudioCapture() {
+        isAudioCapturing = false
+        try {
+            audioThread?.interrupt()
+            audioThread = null
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+        } catch (e: Exception) {}
+    }
+
     private fun stopCapture() {
         isCapturing = false
+        stopAudioCapture()
         serverInstance?.setMirroringState(false)
         try {
             imageReader?.setOnImageAvailableListener(null, null)

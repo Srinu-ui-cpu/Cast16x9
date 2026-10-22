@@ -613,6 +613,66 @@ function runManualInteractiveServer() {
 }
 
 // =========================================================================
+// 6. Cast16x9 V2 Pro Verification (Side-by-Side Isolation, Ambient 16:9, Audio & Zoom)
+// =========================================================================
+function testV2ProFeatures() {
+    console.log(`\n${COLORS.bold}${COLORS.cyan}=== 6. Testing Cast16x9 V2 Pro Architectural Features ===${COLORS.reset}`);
+
+    // A. Package & Side-by-Side Coexistence
+    const buildGradle = fs.readFileSync(path.join(ROOT_DIR, 'app', 'build.gradle'), 'utf8');
+    assert(buildGradle.includes('applicationId "com.cast16x9.app.v2"'), 'build.gradle assigns distinct V2 applicationId (com.cast16x9.app.v2)');
+    assert(buildGradle.includes('versionName "2.1.0-pro"'), 'build.gradle specifies V2 Pro versionName (2.1.0-pro)');
+
+    const stringsXml = fs.readFileSync(path.join(ROOT_DIR, 'app', 'src', 'main', 'res', 'values', 'strings.xml'), 'utf8');
+    assert(stringsXml.includes('Cast16x9 V2 Pro'), 'strings.xml names application Cast16x9 V2 Pro');
+
+    // B. Permissions
+    const manifestXml = fs.readFileSync(path.join(ROOT_DIR, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+    assert(manifestXml.includes('android.permission.RECORD_AUDIO'), 'AndroidManifest.xml declares android.permission.RECORD_AUDIO');
+
+    // C. Android UI Controls for V2
+    const layoutXml = fs.readFileSync(path.join(ROOT_DIR, 'app', 'src', 'main', 'res', 'layout', 'activity_main.xml'), 'utf8');
+    assert(layoutXml.includes('id="@+id/rb_ambient"'), 'activity_main.xml includes 16:9 Ambient Canvas radio button');
+    assert(layoutXml.includes('id="@+id/sb_zoom"'), 'activity_main.xml includes interactive Zoom SeekBar');
+    assert(layoutXml.includes('id="@+id/btn_zoom_minus"'), 'activity_main.xml includes Zoom Minus button');
+    assert(layoutXml.includes('id="@+id/btn_zoom_plus"'), 'activity_main.xml includes Zoom Plus button');
+    assert(layoutXml.includes('id="@+id/btn_zoom_reset"'), 'activity_main.xml includes Zoom Reset button');
+    assert(layoutXml.includes('id="@+id/switch_tv_audio"'), 'activity_main.xml includes TV Audio Mirroring switch');
+
+    // D. Android Service & Server Real-Time Pipeline
+    const captureService = fs.readFileSync(path.join(JAVA_DIR, 'service', 'ScreenCaptureService.kt'), 'utf8');
+    assert(captureService.includes('AudioPlaybackCaptureConfiguration'), 'ScreenCaptureService integrates AudioPlaybackCaptureConfiguration');
+    assert(captureService.includes('frameIntervalMs = 16L'), 'ScreenCaptureService targets 60 FPS ultra-low latency (<35ms)');
+    assert(captureService.includes('onNewAudioChunk'), 'ScreenCaptureService streams captured PCM chunks to WebReceiverServer');
+
+    const serverCode = fs.readFileSync(path.join(JAVA_DIR, 'server', 'WebReceiverServer.kt'), 'utf8');
+    assert(serverCode.includes('currentAspectMode: String = "ambient"'), 'WebReceiverServer defaults to ambient 16:9 mode');
+    assert(serverCode.includes('setTvZoomLevel'), 'WebReceiverServer provides setTvZoomLevel()');
+    assert(serverCode.includes('/ws/audio'), 'WebReceiverServer routes dedicated /ws/audio WebSocket endpoint');
+    assert(serverCode.includes('isPrivateListening'), 'WebReceiverServer supports Private Listening mode');
+
+    // E. Web Receiver V2 Pro UI & Logic
+    const htmlCode = fs.readFileSync(path.join(ASSETS_DIR, 'index.html'), 'utf8');
+    assert(htmlCode.includes('id="ambient-canvas"'), 'index.html contains #ambient-canvas for blurred dynamic wings');
+    assert(htmlCode.includes('id="zoom-control-bar"'), 'index.html contains on-screen TV #zoom-control-bar');
+    assert(htmlCode.includes('id="tv-zoom-slider"'), 'index.html contains #tv-zoom-slider');
+    assert(htmlCode.includes('id="btn-mode-ambient"'), 'index.html contains #btn-mode-ambient');
+
+    const cssCode = fs.readFileSync(path.join(ASSETS_DIR, 'style.css'), 'utf8');
+    assert(cssCode.includes('.aspect-ambient'), 'style.css implements .aspect-ambient styling');
+    assert(cssCode.includes('#ambient-canvas'), 'style.css configures #ambient-canvas dynamic glow filter');
+    assert(cssCode.includes('.zoom-control-bar'), 'style.css styles TV on-screen zoom control bar');
+    assert(cssCode.includes('--tv-zoom-scale'), 'style.css utilizes --tv-zoom-scale CSS variable');
+
+    const jsCode = fs.readFileSync(path.join(ASSETS_DIR, 'app.js'), 'utf8');
+    assert(jsCode.includes("aspectMode = 'ambient'"), 'app.js initializes default aspectMode to ambient');
+    assert(jsCode.includes('setZoomLevel'), 'app.js implements setZoomLevel() with bidirectional TV sync');
+    assert(jsCode.includes('connectAudioWebSocket'), 'app.js connects to /ws/audio');
+    assert(jsCode.includes('playPcmChunk'), 'app.js decodes & plays PCM audio via Web Audio API');
+    assert(jsCode.includes('ambientCtx.drawImage'), 'app.js mirrors frames onto ambient canvas');
+}
+
+// =========================================================================
 // Main Execution Entrypoint
 // =========================================================================
 async function main() {
@@ -628,6 +688,7 @@ async function main() {
         await testServerProtocols();
         await testWebSocketStreaming();
         testDlnaProtocol();
+        testV2ProFeatures();
 
         console.log(`\n${COLORS.bold}====================================================================${COLORS.reset}`);
         console.log(`${COLORS.bold}Test Summary: ${COLORS.green}${passedCount} Passed${COLORS.reset}, ${failedCount > 0 ? COLORS.red : COLORS.green}${failedCount} Failed${COLORS.reset} of ${testCount} tests.`);

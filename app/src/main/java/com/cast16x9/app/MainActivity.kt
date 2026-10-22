@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.DisplayMetrics
 import android.view.View
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -200,13 +201,71 @@ class MainActivity : AppCompatActivity() {
     private fun setupAspectModeControls() {
         binding.rgAspectModes.setOnCheckedChangeListener { _, checkedId ->
             val mode = when (checkedId) {
-                R.id.rb_cover -> "cover"     // 16:9 Zoom/Cover (No Black Bars)
-                R.id.rb_stretch -> "stretch" // 16:9 Stretch/Fill (No Black Bars)
+                R.id.rb_ambient -> "ambient" // 16:9 Ambient Canvas (100% Full Phone Screen, No Crop)
+                R.id.rb_cover -> "cover"     // 16:9 Zoom/Cover (Fills Width)
+                R.id.rb_stretch -> "stretch" // 16:9 Stretch/Fill (Edge to Edge)
                 R.id.rb_fit -> "fit"         // Original Aspect
-                else -> "cover"
+                else -> "ambient"
             }
             webServer?.setTvAspectMode(mode)
             Toast.makeText(this, "TV Display Mode: $mode", Toast.LENGTH_SHORT).show()
+        }
+
+        // Setup Zoom Slider & Scale Controls (50% to 150%)
+        val initialZoom = webServer?.currentZoomLevel ?: 100
+        binding.sbZoom.max = 150
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            binding.sbZoom.min = 50
+        }
+        binding.sbZoom.progress = initialZoom
+        binding.tvZoomLevel.text = "$initialZoom%"
+
+        binding.sbZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val clamped = progress.coerceIn(50, 150)
+                if (progress < 50) {
+                    binding.sbZoom.progress = 50
+                }
+                binding.tvZoomLevel.text = "$clamped%"
+                if (fromUser) {
+                    webServer?.setTvZoomLevel(clamped)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        binding.btnZoomMinus.setOnClickListener {
+            val next = (binding.sbZoom.progress - 5).coerceAtLeast(50)
+            binding.sbZoom.progress = next
+            binding.tvZoomLevel.text = "$next%"
+            webServer?.setTvZoomLevel(next)
+        }
+
+        binding.btnZoomPlus.setOnClickListener {
+            val next = (binding.sbZoom.progress + 5).coerceAtMost(150)
+            binding.sbZoom.progress = next
+            binding.tvZoomLevel.text = "$next%"
+            webServer?.setTvZoomLevel(next)
+        }
+
+        binding.btnZoomReset.setOnClickListener {
+            binding.sbZoom.progress = 100
+            binding.tvZoomLevel.text = "100%"
+            webServer?.setTvZoomLevel(100)
+            Toast.makeText(this, "Zoom reset to 100%", Toast.LENGTH_SHORT).show()
+        }
+
+        // Setup Audio Mirroring & Private Listening Switch
+        binding.switchTvAudio.setOnCheckedChangeListener { _, isChecked ->
+            webServer?.isPrivateListening = !isChecked
+            if (isChecked) {
+                binding.tvAudioModeDesc.text = "🔊 Streaming game, video & app sound directly to TV speakers."
+                Toast.makeText(this, "TV Audio Enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                binding.tvAudioModeDesc.text = "🎧 Private Listening Active: Audio stays on phone / earphones."
+                Toast.makeText(this, "Private Listening Enabled (Audio on phone)", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -424,6 +483,10 @@ class MainActivity : AppCompatActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.RECORD_AUDIO)
         }
 
         if (permissions.isNotEmpty()) {

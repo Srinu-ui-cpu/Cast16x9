@@ -2,7 +2,7 @@ name: Build & Release Cast16x9 APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "v2-next" ]
   workflow_dispatch:
 
 permissions:
@@ -52,18 +52,55 @@ jobs:
       - name: Rename APK for Easy Download
         run: |
           mkdir -p release-output
-          cp app/build/outputs/apk/debug/app-debug.apk release-output/Cast16x9-FullTV-ScreenMirror.apk
+          if [ "${{ github.ref }}" = "refs/heads/v2-next" ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk release-output/Cast16x9-V2-Pro.apk
+          else
+            cp app/build/outputs/apk/debug/app-debug.apk release-output/Cast16x9-FullTV-ScreenMirror.apk
+          fi
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Cast16x9-FullTV-ScreenMirror-APK
-          path: release-output/Cast16x9-FullTV-ScreenMirror.apk
+          name: ${{ github.ref == 'refs/heads/v2-next' && 'Cast16x9-V2-Pro-APK' || 'Cast16x9-FullTV-ScreenMirror-APK' }}
+          path: release-output/*.apk
           retention-days: 30
 
-      - name: Create GitHub Release with APK
+      - name: Create GitHub Release for V2 Pro
+        if: success() && github.ref == 'refs/heads/v2-next'
         uses: softprops/action-gh-release@v2
-        if: success()
+        with:
+          tag_name: v2.1.0-pro
+          name: Cast16x9 v2.1.0 Pro Release (16:9 Ambient Canvas, Audio Mirroring & Zoom Adjuster)
+          body: |
+            ### 🚀 Cast16x9 V2 Pro (v2.1.0-pro)
+
+            **Install Side-by-Side with V1**: Package name is `com.cast16x9.app.v2`, allowing both V1 and V2 Pro to be installed simultaneously on your device without conflict!
+
+            #### What's New in V2 Pro:
+            1. **✨ 16:9 Ambient Canvas (100% Full Phone Screen, Zero Cropping)**:
+               - Fixed the flaw in classic 16:9 Cover mode that cut off 70% of tall (20:9) phone screens.
+               - Shows 100% of your phone screen from top status bar to bottom navigation bar with zero cropping.
+               - Real-time hardware-accelerated blurred ambient wings dynamically fill the TV side borders with matching colors (0 black bars).
+            2. **🔍 Interactive Zoom & Scale Adjuster**:
+               - Real-time zoom slider (50% to 150%) available on both TV receiver screen and Android phone app.
+               - Remote shortcut keys `4` (Zoom Out), `5` (Zoom In), and `0` (Reset to 100%).
+            3. **🔊 Screen Mirroring Audio**:
+               - Streams system, game, video, and app sound directly to your TV speakers using Android 10+ `AudioPlaybackCapture`.
+            4. **🎧 Private Listening Mode**:
+               - 1-tap switch in the mobile app keeps audio on phone speakers/Bluetooth headphones while mirroring 4K video to TV.
+            5. **⚡ Ultra Low-Latency 60 FPS Engine**:
+               - Reduced frame interval to 16ms (<35ms latency) for fluid gaming and app demonstration.
+            6. **🎬 6GB+ Movie Seeking & Instant TV Caching Engine**:
+               - Retains full hardware O(1) kernel fstat seeking and IndexedDB database caching with zero glitching or restarting from 00:00.
+          files: release-output/Cast16x9-V2-Pro.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release with APK (Main)
+        if: success() && github.ref != 'refs/heads/v2-next'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0.0
           name: Cast16x9 v2.0.0 Master Release (6GB+ Ultra-Fast Seeking, Kernel fstat & Zero Restart Fix)

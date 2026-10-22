@@ -32,7 +32,12 @@ class WebReceiverServer(
 
     // Persistent state tracking
     @Volatile var isMirroringActive: Boolean = false
-    @Volatile var currentAspectMode: String = "cover" // "cover", "stretch", "fit"
+    @Volatile var currentAspectMode: String = "ambient" // "ambient", "cover", "stretch", "fit"
+    @Volatile var currentZoomLevel: Int = 100 // 50% to 150%
+    @Volatile var isPrivateListening: Boolean = false // false = TV audio, true = phone audio only
+
+    // Audio stream clients connected via /ws/audio
+    val audioClients = CopyOnWriteArrayList<AudioWebSocket>()
 
     // Latest screen capture frame buffer
     @Volatile var latestFrameBytes: ByteArray? = null
@@ -47,7 +52,12 @@ class WebReceiverServer(
     var onMediaCancelledListener: (() -> Unit)? = null
 
     override fun openWebSocket(handshake: IHTTPSession): WebSocket {
-        return ScreenWebSocket(handshake)
+        val uri = handshake.uri.trimEnd('/')
+        return if (uri == "/ws/audio") {
+            AudioWebSocket(handshake)
+        } else {
+            ScreenWebSocket(handshake)
+        }
     }
 
     /**
@@ -55,7 +65,7 @@ class WebReceiverServer(
      */
     override fun isWebsocketRequested(session: IHTTPSession): Boolean {
         val uri = session.uri.trimEnd('/')
-        if (uri == "/ws/screen" || uri == "/ws") {
+        if (uri == "/ws/screen" || uri == "/ws" || uri == "/ws/audio") {
             return true
         }
 
@@ -168,6 +178,8 @@ class WebReceiverServer(
         val json = JSONObject().apply {
             put("isMirroring", isMirroringActive)
             put("aspectMode", currentAspectMode)
+            put("zoomLevel", currentZoomLevel)
+            put("isPrivateListening", isPrivateListening)
             put("hasMedia", currentMediaUri != null)
             if (currentMediaUri != null) {
                 val mediaObj = JSONObject().apply {
@@ -696,6 +708,46 @@ class WebReceiverServer(
         sendControlCommand(json)
     }
 
+    fun setTvZoomLevel(zoom: Int) {
+        currentZoomLevel = zoom.coerceIn(50, 150)
+        val json = JSONObject().apply {
+            put("action", "set_zoom")
+            put("zoom", currentZoomLevel)
+        }
+        sendControlCommand(json)
+    }
+
+    fun onNewAudioChunk(pcmChunk: ByteArray) {
+        if (isPrivateListening) return
+        for (client in audioClients) {
+            try {
+                if (client.isOpen) {
+                    synchronized(client) {
+                        client.send(pcmChunk)
+                    }
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    inner class AudioWebSocket(handshake: IHTTPSession) : WebSocket(handshake) {
+        override fun onOpen() {
+            audioClients.add(this)
+        }
+
+        override fun onClose(code: WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {
+            audioClients.remove(this)
+        }
+
+        override fun onMessage(message: WebSocketFrame?) {}
+
+        override fun onPong(pong: WebSocketFrame?) {}
+
+        override fun onException(exception: java.io.IOException?) {
+            audioClients.remove(this)
+        }
+    }
+
     inner class ScreenWebSocket(handshake: IHTTPSession) : WebSocket(handshake) {
         override fun onOpen() {
             connectedClients.add(this)
@@ -704,6 +756,8 @@ class WebReceiverServer(
                     put("action", "init_state")
                     put("isMirroring", isMirroringActive)
                     put("aspectMode", currentAspectMode)
+                    put("zoomLevel", currentZoomLevel)
+                    put("isPrivateListening", isPrivateListening)
                     put("hasMedia", currentMediaUri != null)
                     if (currentMediaUri != null) {
                         put("mediaUrl", "/media/active")
@@ -736,6 +790,20 @@ class WebReceiverServer(
                 currentMediaPath = null
                 currentMediaSize = -1L
                 onMediaCancelledListener?.invoke()
+            } else {
+                try {
+                    val obj = JSONObject(payload)
+                    if (obj.has("action")) {
+                        when (obj.getString("action")) {
+                            "set_zoom" -> {
+                                currentZoomLevel = obj.optInt("zoom", 100).coerceIn(50, 150)
+                            }
+                            "set_aspect" -> {
+                                currentAspectMode = obj.optString("mode", "ambient")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {}
             }
         }
 
