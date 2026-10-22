@@ -585,6 +585,28 @@
         showHUD(`▶ Playing in 4K: ${title || 'Video'}`);
     }
 
+    // Video Player Lifecycle Events for Glitch-Free 5GB+ Fast-Forwarding
+    videoPlayer.addEventListener('seeking', function () {
+        showHUD(`⏩ Seeking to ${formatTime(videoPlayer.currentTime)}...`);
+    });
+
+    videoPlayer.addEventListener('seeked', function () {
+        showHUD(`▶ Playing at ${formatTime(videoPlayer.currentTime)}`);
+        videoPlayer.play().catch(() => {});
+    });
+
+    videoPlayer.addEventListener('waiting', function () {
+        showHUD(`⌛ Buffering stream...`);
+    });
+
+    videoPlayer.addEventListener('playing', function () {
+        if (unmuteBanner) unmuteBanner.classList.add('hidden');
+    });
+
+    videoPlayer.addEventListener('error', function () {
+        console.warn('Video playback notice:', videoPlayer.error);
+    });
+
     function playFromBlob(blob, title) {
         if (activeBlobUrl) {
             try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}

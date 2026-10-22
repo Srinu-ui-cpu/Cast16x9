@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.provider.MediaStore
+import android.system.Os
+import android.system.OsConstants
 import com.cast16x9.app.model.SharedFile
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoWSD
@@ -14,6 +16,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.util.concurrent.CopyOnWriteArrayList
 
 class WebReceiverServer(
@@ -39,6 +42,8 @@ class WebReceiverServer(
     @Volatile var currentMediaUri: Uri? = null
     @Volatile var currentMediaMimeType: String? = null
     @Volatile var currentMediaTitle: String? = null
+    @Volatile var currentMediaPath: String? = null
+    @Volatile var currentMediaSize: Long = -1L
     var onMediaCancelledListener: (() -> Unit)? = null
 
     override fun openWebSocket(handshake: IHTTPSession): WebSocket {
@@ -148,6 +153,7 @@ class WebReceiverServer(
         response.addHeader("Access-Control-Allow-Origin", "*")
         response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
         response.addHeader("Access-Control-Allow-Headers", "*")
+        response.addHeader("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges, ETag")
         return response
     }
 
@@ -278,6 +284,17 @@ class WebReceiverServer(
      * Guaranteed to work across all Android content://, file://, and MediaStore URIs.
      */
     private fun getMediaFileLength(contentUri: Uri): Long {
+        // 0. Use known media size if already resolved
+        if (currentMediaSize > 0 && currentMediaUri == contentUri) {
+            return currentMediaSize
+        }
+        if (currentMediaPath != null) {
+            try {
+                val f = File(currentMediaPath!!)
+                if (f.exists() && f.length() > 0) return f.length()
+            } catch (e: Exception) {}
+        }
+
         val cr = context.contentResolver
 
         // 1. Try AssetFileDescriptor (best for content URIs)
@@ -413,32 +430,53 @@ class WebReceiverServer(
 
             val contentLength = end - start + 1
 
-            // Open dedicated file descriptor and seek to the exact byte position
-            val pfd = try { cr.openFileDescriptor(contentUri, "r") } catch (e: Exception) { null }
-            val rawStream: InputStream = if (pfd != null) {
-                val fis = FileInputStream(pfd.fileDescriptor)
-                try {
-                    fis.channel.position(start)
-                } catch (e: Exception) {
+            // Direct hardware RandomAccessFile pipeline for 5GB+ movies (instantaneous kernel lseek)
+            val directFile = if (currentMediaPath != null && currentMediaUri == contentUri) File(currentMediaPath!!) else null
+            val useDirectFile = directFile != null && directFile.exists() && directFile.canRead()
+
+            var raf: RandomAccessFile? = null
+            var pfd: ParcelFileDescriptor? = null
+            val rawStream: InputStream
+
+            if (useDirectFile) {
+                val r = RandomAccessFile(directFile!!, "r")
+                r.seek(start)
+                raf = r
+                rawStream = object : InputStream() {
+                    override fun read(): Int = r.read()
+                    override fun read(b: ByteArray, off: Int, len: Int): Int = r.read(b, off, len)
+                    override fun close() { r.close() }
+                }
+            } else {
+                pfd = try { cr.openFileDescriptor(contentUri, "r") } catch (e: Exception) { null }
+                if (pfd != null) {
+                    try {
+                        Os.lseek(pfd.fileDescriptor, start, OsConstants.SEEK_SET)
+                    } catch (e: Exception) {}
+                    val fis = FileInputStream(pfd.fileDescriptor)
+                    try {
+                        fis.channel.position(start)
+                    } catch (e: Exception) {
+                        var skipped = 0L
+                        while (skipped < start) {
+                            val n = fis.skip(start - skipped)
+                            if (n <= 0) break
+                            skipped += n
+                        }
+                    }
+                    rawStream = fis
+                } else {
+                    val ins = cr.openInputStream(contentUri) ?: return withCors(
+                        newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Cannot open stream")
+                    )
                     var skipped = 0L
                     while (skipped < start) {
-                        val n = fis.skip(start - skipped)
+                        val n = ins.skip(start - skipped)
                         if (n <= 0) break
                         skipped += n
                     }
+                    rawStream = ins
                 }
-                fis
-            } else {
-                val ins = cr.openInputStream(contentUri) ?: return withCors(
-                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Cannot open stream")
-                )
-                var skipped = 0L
-                while (skipped < start) {
-                    val n = ins.skip(start - skipped)
-                    if (n <= 0) break
-                    skipped += n
-                }
-                ins
             }
 
             val bis = java.io.BufferedInputStream(rawStream, 128 * 1024)
@@ -468,6 +506,7 @@ class WebReceiverServer(
                 override fun close() {
                     try { bis.close() } catch (e: Exception) {}
                     try { rawStream.close() } catch (e: Exception) {}
+                    try { raf?.close() } catch (e: Exception) {}
                     try { pfd?.close() } catch (e: Exception) {}
                 }
             }
@@ -489,14 +528,32 @@ class WebReceiverServer(
         }
 
         // 4. Full Content Response (when starting from beginning)
-        val pfd = try { cr.openFileDescriptor(contentUri, "r") } catch (e: Exception) { null }
-        val rawStream = if (pfd != null) {
-            FileInputStream(pfd.fileDescriptor)
+        val directFile = if (currentMediaPath != null && currentMediaUri == contentUri) File(currentMediaPath!!) else null
+        val useDirectFile = directFile != null && directFile.exists() && directFile.canRead()
+
+        var raf: RandomAccessFile? = null
+        var pfd: ParcelFileDescriptor? = null
+        val rawStream: InputStream
+
+        if (useDirectFile) {
+            val r = RandomAccessFile(directFile!!, "r")
+            raf = r
+            rawStream = object : InputStream() {
+                override fun read(): Int = r.read()
+                override fun read(b: ByteArray, off: Int, len: Int): Int = r.read(b, off, len)
+                override fun close() { r.close() }
+            }
         } else {
-            cr.openInputStream(contentUri) ?: return withCors(
-                newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Cannot open stream")
-            )
+            pfd = try { cr.openFileDescriptor(contentUri, "r") } catch (e: Exception) { null }
+            rawStream = if (pfd != null) {
+                FileInputStream(pfd.fileDescriptor)
+            } else {
+                cr.openInputStream(contentUri) ?: return withCors(
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Cannot open stream")
+                )
+            }
         }
+
         val fullBuffered = java.io.BufferedInputStream(rawStream, 128 * 1024)
         val safeStream = object : InputStream() {
             override fun read(): Int = fullBuffered.read()
@@ -505,6 +562,7 @@ class WebReceiverServer(
             override fun close() {
                 try { fullBuffered.close() } catch (e: Exception) {}
                 try { rawStream.close() } catch (e: Exception) {}
+                try { raf?.close() } catch (e: Exception) {}
                 try { pfd?.close() } catch (e: Exception) {}
             }
         }
@@ -552,10 +610,12 @@ class WebReceiverServer(
         }
     }
 
-    fun castMediaToTv(uri: Uri, mimeType: String, title: String) {
+    fun castMediaToTv(uri: Uri, mimeType: String, title: String, filePath: String? = null, fileSize: Long = -1L) {
         currentMediaUri = uri
         currentMediaMimeType = mimeType
         currentMediaTitle = title
+        currentMediaPath = filePath
+        currentMediaSize = fileSize
 
         val isVideo = mimeType.startsWith("video/")
         val mediaId = java.util.UUID.randomUUID().toString().take(8)
@@ -577,6 +637,8 @@ class WebReceiverServer(
         currentMediaUri = null
         currentMediaMimeType = null
         currentMediaTitle = null
+        currentMediaPath = null
+        currentMediaSize = -1L
 
         val json = JSONObject().apply {
             put("action", "stop_media")
@@ -642,6 +704,8 @@ class WebReceiverServer(
                 currentMediaUri = null
                 currentMediaTitle = null
                 currentMediaMimeType = null
+                currentMediaPath = null
+                currentMediaSize = -1L
                 onMediaCancelledListener?.invoke()
             }
         }

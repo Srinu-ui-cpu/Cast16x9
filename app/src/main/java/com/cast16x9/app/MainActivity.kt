@@ -292,7 +292,7 @@ class MainActivity : AppCompatActivity() {
                 when (which) {
                     0 -> {
                         // Cast to Web Receiver in full 1080p/4K
-                        webServer?.castMediaToTv(item.uri, item.mimeType, item.title)
+                        webServer?.castMediaToTv(item.uri, item.mimeType, item.title, item.path, item.size)
                         binding.cardActiveCast.visibility = View.VISIBLE
                         binding.tvCastingTitle.text = item.title
                         Toast.makeText(this, "Casting 1080p/4K to TV Web Receiver...", Toast.LENGTH_SHORT).show()
@@ -318,6 +318,8 @@ class MainActivity : AppCompatActivity() {
         webServer?.currentMediaUri = item.uri
         webServer?.currentMediaMimeType = item.mimeType
         webServer?.currentMediaTitle = item.title
+        webServer?.currentMediaPath = item.path
+        webServer?.currentMediaSize = item.size
 
         val ip = NetworkUtils.getLocalIpAddress(this)
         val mediaStreamUrl = "http://$ip:${NetworkUtils.DEFAULT_HTTP_PORT}/media/active"

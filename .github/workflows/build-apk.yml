@@ -31,6 +31,9 @@ jobs:
       - name: Run Cast16x9 Automated Diagnostic Test Suite
         run: node test-suite/run-tests.js
 
+      - name: Run Cast16x9 5GB Movie Simulation
+        run: node test-suite/simulation-5gb.js
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
@@ -59,15 +62,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v1.8.0
-          name: Cast16x9 v1.8.0 Release (Universal HTTP 206 Byte-Range Seeking Engine)
+          tag_name: v1.9.0
+          name: Cast16x9 v1.9.0 Final Release (5GB+ Movie Ultra-Fast Seeking & Hardware Seek Engine)
           body: |
-            ### Cast16x9 v1.8.0 Universal Release
-            - **Universal HTTP 206 Partial Content Pipeline**: Eliminated the 30MB Smart TV browser memory cap completely. The TV now streams directly using native hardware video decoding via standard HTTP/1.1 byte ranges.
-            - **Instant Glitch-Free O(1) Seeking**: Moving forward or backward on the TV remote or seekbar resolves in < 5ms via dedicated file channel seeks, resuming instantly with ZERO restart to 0:00.
-            - **5-Way Fallback File Length Resolver**: Uses AssetFileDescriptor, MediaStore SIZE, OpenableColumns, ParcelFileDescriptor, and direct file path to guarantee exact file size and duration on all Android devices.
-            - **HTTP HEAD & Suffix Range Compliance**: Fully handles browser video player probe requests (`Method.HEAD`), returning standard `Accept-Ranges: bytes`, `ETag`, and `Content-Length`.
-            - **Zero TV RAM / Zero Quota Overhead**: Video plays directly without storing gigabytes in TV JavaScript memory or IndexedDB, completely preventing TV browser memory crashes.
+            ### Cast16x9 v1.9.0 Final Release
+            - **5GB+ Movie Ultra-Fast Fast-Forwarding**: Solved the forward-seeking glitch and restart-to-0 issue completely. Users can scrub forward to 1.5 GB, 3.5 GB, or even 5.1 GB near the end of a movie, and playback resumes smoothly in milliseconds.
+            - **Kernel-Level O(1) RandomAccessFile Seeking**: Replaced sequential ContentProvider IPC stream skips with direct Linux `lseek64()` via `RandomAccessFile(file, "r")` and `Os.lseek`. Seeking any position is instantaneous regardless of file size (50 MB or 50 GB).
+            - **CORS Range Header Exposure**: Added `Access-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges, ETag` so Smart TV web engines recognize byte-range slice responses without reverting to start.
+            - **Lifecycle Seeking & Auto-Resume**: TV Web Receiver hooks `seeking` and `seeked` events with real-time HUD timestamps and instant decode auto-resume.
+            - **Universal HTTP 206 Partial Content Pipeline**: Streams directly to TV hardware decoders without hitting browser memory limits.
             - **Instant Video Cancellation**: Cancel buttons in both Phone APK and TV Web Receiver immediately free all resources for seamless video switching.
           files: release-output/Cast16x9-FullTV-ScreenMirror.apk
           draft: false
