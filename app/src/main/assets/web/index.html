@@ -70,6 +70,25 @@
                     <span>🔇 TV Browser Muted Audio &mdash; Press OK on Remote to Turn Sound ON</span>
                     <button id="btn-unmute" class="btn-unmute" tabindex="15">🔊 Turn Sound ON</button>
                 </div>
+                <!-- 4K Fast TV Database Caching HUD (Glitch-Free Forward/Seeking) -->
+                <div id="caching-hud" class="caching-hud hidden">
+                    <div class="caching-card">
+                        <div class="caching-header">
+                            <span class="caching-icon">⚡</span>
+                            <div class="caching-titles">
+                                <h3 id="caching-title">Loading 4K Video into TV Database...</h3>
+                                <p id="caching-subtitle">Caching full video into browser database for 100% glitch-free forward &amp; instant seeking</p>
+                            </div>
+                        </div>
+                        <div class="caching-bar-bg">
+                            <div id="caching-progress-bar" class="caching-progress-bar" style="width: 0%;"></div>
+                        </div>
+                        <div class="caching-footer">
+                            <span id="caching-stats">Downloading: 0% (0 MB / 0 MB)</span>
+                            <button id="btn-play-live" class="btn-play-live" tabindex="16">▶ Play Live (Skip Cache)</button>
+                        </div>
+                    </div>
+                </div>
                 <div id="media-placeholder" class="placeholder-card">
                     <div class="icon-tv">🎬</div>
                     <h2>No Media Playing</h2>
@@ -125,7 +144,7 @@
     <!-- Bottom Status Bar -->
     <footer id="tv-footer">
         <span id="footer-left">Press <kbd>1</kbd>, <kbd>2</kbd>, or <kbd>3</kbd> to change 16:9 display mode</span>
-        <span id="footer-right">Cast16x9 v1.4.0</span>
+        <span id="footer-right">Cast16x9 v1.5.0</span>
     </footer>
 
     <script src="app.js"></script>

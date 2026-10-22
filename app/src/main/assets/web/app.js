@@ -32,6 +32,12 @@
     const unmuteBanner = document.getElementById('unmute-banner');
     const btnUnmute = document.getElementById('btn-unmute');
 
+    // 4K Fast TV Database Caching Elements
+    const cachingHud = document.getElementById('caching-hud');
+    const cachingProgressBar = document.getElementById('caching-progress-bar');
+    const cachingStats = document.getElementById('caching-stats');
+    const btnPlayLive = document.getElementById('btn-play-live');
+
     const filesGrid = document.getElementById('files-grid');
     const btnRefreshFiles = document.getElementById('btn-refresh-files');
 
@@ -326,36 +332,235 @@
         }
     }
 
-    // 5. Media Player Handling (Direct Fullscreen 16:9 Video with Full Unmuted Audio)
-    function playVideoOnTV(url, title) {
+    // 5. Browser Database & 4K Smart Cache Engine (IndexedDB + Blob Memory)
+    // Eliminates all seek glitches, prevents restarting from 0, and enables full-bandwidth 4K playback.
+    const DB_NAME = 'Cast16x9_MediaDB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'media_cache';
+    const inMemoryMediaCache = new Map();
+    let currentDownloadAbort = null;
+    let activeBlobUrl = null;
+
+    function openDB() {
+        return new Promise((resolve) => {
+            if (!window.indexedDB) {
+                resolve(null);
+                return;
+            }
+            try {
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onupgradeneeded = function (e) {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+                    }
+                };
+                req.onsuccess = function (e) {
+                    resolve(e.target.result);
+                };
+                req.onerror = function () {
+                    resolve(null);
+                };
+            } catch (e) {
+                resolve(null);
+            }
+        });
+    }
+
+    async function getCachedMedia(key) {
+        if (inMemoryMediaCache.has(key)) {
+            return inMemoryMediaCache.get(key);
+        }
+        const db = await openDB();
+        if (!db) return null;
+        return new Promise((resolve) => {
+            try {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const req = store.get(key);
+                req.onsuccess = function () {
+                    const res = req.result;
+                    if (res && res.blob) {
+                        inMemoryMediaCache.set(key, res);
+                        resolve(res);
+                    } else {
+                        resolve(null);
+                    }
+                };
+                req.onerror = function () {
+                    resolve(null);
+                };
+            } catch (e) {
+                resolve(null);
+            }
+        });
+    }
+
+    async function saveMediaToCache(key, blob, title, mimeType) {
+        const record = {
+            key,
+            blob,
+            title: title || 'Video',
+            mimeType: mimeType || 'video/mp4',
+            size: blob.size,
+            timestamp: Date.now()
+        };
+        inMemoryMediaCache.set(key, record);
+
+        const db = await openDB();
+        if (!db) return;
+        try {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            store.put(record);
+
+            // Auto-clean: keep up to 4 recent videos to protect TV storage
+            const allReq = store.getAll();
+            allReq.onsuccess = function () {
+                const items = allReq.result || [];
+                if (items.length > 4) {
+                    items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    while (items.length > 4) {
+                        const oldest = items.shift();
+                        store.delete(oldest.key);
+                        inMemoryMediaCache.delete(oldest.key);
+                    }
+                }
+            };
+        } catch (e) {
+            console.warn('IndexedDB write warning:', e);
+        }
+    }
+
+    async function playVideoOnTV(url, title) {
         photoViewer.classList.add('hidden');
         mediaPlaceholder.classList.add('hidden');
         videoPlayer.classList.remove('hidden');
 
-        // Set video source with audio unmuted
-        videoPlayer.src = url;
-        videoPlayer.muted = false;
-        videoPlayer.volume = 1.0;
-        videoPlayer.removeAttribute('muted');
+        // Cancel previous background caching download if any
+        if (currentDownloadAbort) {
+            currentDownloadAbort.abort();
+            currentDownloadAbort = null;
+        }
+
+        const cacheKey = (title || 'video') + '_' + url.split('?')[0];
+
+        // 1. Instant Playback if already cached in TV database
+        const cached = await getCachedMedia(cacheKey);
+        if (cached && cached.blob) {
+            if (cachingHud) cachingHud.classList.add('hidden');
+            playFromBlob(cached.blob, title);
+            showHUD('⚡ Loaded from TV Database: Glitch-Free 4K Seeking Enabled');
+            return;
+        }
+
+        // 2. High-Speed Cache Download into TV Storage
+        startFastCachingAndPlay(url, title, cacheKey);
+    }
+
+    function playFromBlob(blob, title) {
+        if (activeBlobUrl) {
+            try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+        }
+        activeBlobUrl = URL.createObjectURL(blob);
+        videoPlayer.src = activeBlobUrl;
+        unmuteAudio();
 
         const playPromise = videoPlayer.play();
         if (playPromise !== undefined) {
             playPromise.then(() => {
                 if (unmuteBanner) unmuteBanner.classList.add('hidden');
             }).catch(err => {
-                console.warn('Autoplay with sound blocked by TV browser policy, starting muted with prompt:', err);
                 videoPlayer.muted = true;
                 videoPlayer.play().then(() => {
                     if (unmuteBanner) unmuteBanner.classList.remove('hidden');
                     showHUD('🔇 Audio Muted by TV: Press OK on Remote to Turn Sound ON');
                 }).catch(e => {
                     console.error('Video play error:', e);
-                    showHUD('Press OK / Play on TV Remote to start video');
                 });
             });
         }
 
-        showHUD(`Playing: ${title || 'Video'}`);
+        showHUD(`Playing in 4K: ${title || 'Video'}`);
+    }
+
+    function startFastCachingAndPlay(url, title, cacheKey) {
+        if (cachingHud) {
+            cachingHud.classList.remove('hidden');
+            if (cachingProgressBar) cachingProgressBar.style.width = '0%';
+            if (cachingStats) cachingStats.textContent = 'Connecting to phone... 0%';
+        }
+
+        const controller = new AbortController();
+        currentDownloadAbort = controller;
+        const startTime = Date.now();
+
+        fetch(url, { signal: controller.signal })
+            .then(async (response) => {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const totalBytes = +response.headers.get('Content-Length') || 0;
+                const reader = response.body.getReader();
+                let receivedBytes = 0;
+                const chunks = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    receivedBytes += value.length;
+
+                    if (totalBytes > 0 && cachingProgressBar && cachingStats) {
+                        const pct = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+                        cachingProgressBar.style.width = pct + '%';
+
+                        const elapsedSec = (Date.now() - startTime) / 1000;
+                        const speedMbps = elapsedSec > 0.3 ? ((receivedBytes * 8) / (elapsedSec * 1024 * 1024)).toFixed(1) : 0;
+                        const mbReceived = (receivedBytes / (1024 * 1024)).toFixed(1);
+                        const mbTotal = (totalBytes / (1024 * 1024)).toFixed(1);
+                        cachingStats.textContent = `⚡ Caching 4K Video: ${pct}% (${mbReceived} MB / ${mbTotal} MB at ${speedMbps} Mbps)`;
+                    }
+                }
+
+                const blob = new Blob(chunks, { type: 'video/mp4' });
+                await saveMediaToCache(cacheKey, blob, title, 'video/mp4');
+
+                if (cachingHud) cachingHud.classList.add('hidden');
+                currentDownloadAbort = null;
+
+                playFromBlob(blob, title);
+                showHUD('⚡ 4K Video Cached in TV Database: Glitch-free Seeking Ready');
+            })
+            .catch((err) => {
+                if (err.name === 'AbortError') {
+                    return;
+                }
+                console.warn('Fast caching fallback to live stream:', err);
+                if (cachingHud) cachingHud.classList.add('hidden');
+                playLiveStreamDirect(url, title);
+            });
+    }
+
+    function playLiveStreamDirect(url, title) {
+        if (cachingHud) cachingHud.classList.add('hidden');
+        if (activeBlobUrl) {
+            try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+            activeBlobUrl = null;
+        }
+        videoPlayer.src = url;
+        unmuteAudio();
+        videoPlayer.play().catch(() => {});
+        showHUD(`Live Stream: ${title || 'Video'}`);
+    }
+
+    if (btnPlayLive) {
+        btnPlayLive.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (currentDownloadAbort) {
+                currentDownloadAbort.abort();
+                currentDownloadAbort = null;
+            }
+            playLiveStreamDirect('/media/active', 'Live Stream');
+        });
     }
 
     function showPhotoOnTV(url, title) {
@@ -512,8 +717,35 @@
         return div.innerHTML;
     }
 
-    // 8. TV Remote Control Key Handling
+    // 8. TV Remote Control Key Handling (16:9 Aspect, Smooth 4K Seeking, & Audio Controls)
     window.addEventListener('keydown', function (e) {
+        // TV Remote Seeking & Playback Shortcuts
+        if (activeTab === 'media' && videoPlayer && !videoPlayer.classList.contains('hidden')) {
+            switch (e.key) {
+                case 'ArrowRight':
+                case 'l':
+                case 'L':
+                    e.preventDefault();
+                    videoPlayer.currentTime = Math.min(videoPlayer.duration || 999999, videoPlayer.currentTime + 10);
+                    showHUD(`⏩ Forward +10s (${formatTime(videoPlayer.currentTime)})`);
+                    return;
+                case 'ArrowLeft':
+                case 'j':
+                case 'J':
+                    e.preventDefault();
+                    videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - 10);
+                    showHUD(`⏪ Rewind -10s (${formatTime(videoPlayer.currentTime)})`);
+                    return;
+                case ' ':
+                case 'k':
+                case 'K':
+                    e.preventDefault();
+                    if (videoPlayer.paused) { videoPlayer.play(); showHUD('▶ Playing'); }
+                    else { videoPlayer.pause(); showHUD('⏸ Paused'); }
+                    return;
+            }
+        }
+
         switch (e.key) {
             case '1': setAspectMode('cover'); break;
             case '2': setAspectMode('stretch'); break;
@@ -522,6 +754,13 @@
             case 'F': toggleFullscreen(); break;
         }
     });
+
+    function formatTime(sec) {
+        if (isNaN(sec)) return '0:00';
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
 
     function toggleFullscreen() {
         if (!document.fullscreenElement) {

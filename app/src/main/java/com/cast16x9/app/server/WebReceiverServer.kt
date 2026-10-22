@@ -317,18 +317,25 @@ class WebReceiverServer(
                 end = fileLength - 1
             }
 
+            if (start >= fileLength) {
+                val resp = newFixedLengthResponse(Response.Status.RANGE_NOT_SATISFIABLE, MIME_PLAINTEXT, "")
+                resp.addHeader("Content-Range", "bytes */$fileLength")
+                return withCors(resp)
+            }
+
             val contentLength = end - start + 1
             val fis = FileInputStream(pfd.fileDescriptor)
 
             // Hardware O(1) seek forward/backward in the file
             fis.channel.position(start)
+            val bis = java.io.BufferedInputStream(fis, 64 * 1024)
 
             val boundedStream = object : InputStream() {
                 var bytesLeft = contentLength
 
                 override fun read(): Int {
                     if (bytesLeft <= 0) return -1
-                    val b = fis.read()
+                    val b = bis.read()
                     if (b != -1) bytesLeft--
                     return b
                 }
@@ -336,17 +343,20 @@ class WebReceiverServer(
                 override fun read(b: ByteArray, off: Int, len: Int): Int {
                     if (bytesLeft <= 0) return -1
                     val toRead = if (len > bytesLeft) bytesLeft.toInt() else len
-                    val read = fis.read(b, off, toRead)
+                    val read = bis.read(b, off, toRead)
                     if (read > 0) bytesLeft -= read
                     return read
                 }
 
                 override fun close() {
+                    try { bis.close() } catch (e: Exception) {}
                     try { fis.close() } catch (e: Exception) {}
                     try { pfd.close() } catch (e: Exception) {}
                 }
             }
 
+            // Note: newFixedLengthResponse automatically injects Content-Length: contentLength.
+            // Do NOT call response.addHeader("Content-Length") to prevent duplicate header violation.
             val response = newFixedLengthResponse(
                 Response.Status.PARTIAL_CONTENT,
                 mimeType,
@@ -355,29 +365,27 @@ class WebReceiverServer(
             )
             response.addHeader("Content-Range", "bytes $start-$end/$fileLength")
             response.addHeader("Accept-Ranges", "bytes")
-            response.addHeader("Content-Length", contentLength.toString())
             if (filename != null) {
                 response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
             }
             return withCors(response)
         }
 
-        // Full content response (when starting from beginning or no range header)
-        val fullStream = if (pfd != null) {
+        // Full content response (when starting from beginning or downloading into TV database cache)
+        val rawStream = if (pfd != null) {
             FileInputStream(pfd.fileDescriptor)
         } else {
             cr.openInputStream(contentUri) ?: return withCors(newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Cannot open stream"))
         }
+        val fullStream = java.io.BufferedInputStream(rawStream, 64 * 1024)
 
+        // Note: newFixedLengthResponse automatically injects Content-Length: fileLength.
         val response = if (fileLength > 0) {
             newFixedLengthResponse(Response.Status.OK, mimeType, fullStream, fileLength)
         } else {
             newChunkedResponse(Response.Status.OK, mimeType, fullStream)
         }
         response.addHeader("Accept-Ranges", "bytes")
-        if (fileLength > 0) {
-            response.addHeader("Content-Length", fileLength.toString())
-        }
         if (filename != null) {
             response.addHeader("Content-Disposition", "$dispositionType; filename=\"$filename\"")
         }

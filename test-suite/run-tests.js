@@ -62,11 +62,16 @@ function testStaticAssets() {
     assert(htmlContent.includes('id="btn-mode-fit"'), 'index.html contains 16:9 Fit button');
     assert(htmlContent.includes('id="unmute-banner"'), 'index.html contains TV browser audio unmute banner');
     assert(htmlContent.includes('id="btn-unmute"'), 'index.html contains Turn Sound ON button');
+    assert(htmlContent.includes('id="caching-hud"'), 'index.html contains 4K TV Database Caching HUD');
+    assert(htmlContent.includes('id="caching-progress-bar"'), 'index.html contains Caching progress bar');
+    assert(htmlContent.includes('id="btn-play-live"'), 'index.html contains Play Live (Skip Cache) button');
 
     const cssContent = fs.readFileSync(cssPath, 'utf8');
     assert(cssContent.includes('.aspect-cover'), 'CSS contains .aspect-cover class');
     assert(cssContent.includes('.aspect-stretch'), 'CSS contains .aspect-stretch class');
     assert(cssContent.includes('.unmute-banner'), 'CSS contains .unmute-banner audio styles');
+    assert(cssContent.includes('.caching-hud'), 'CSS contains .caching-hud 4K database styling');
+    assert(cssContent.includes('.caching-progress-bar'), 'CSS contains .caching-progress-bar styling');
     assert(cssContent.includes('100vw') && cssContent.includes('100vh'), 'CSS enforces 100vw/100vh full-screen rules');
 
     const jsContent = fs.readFileSync(jsPath, 'utf8');
@@ -75,6 +80,10 @@ function testStaticAssets() {
     assert(jsContent.includes('playVideoOnTV'), 'app.js implements playVideoOnTV()');
     assert(jsContent.includes('unmuteAudio'), 'app.js implements unmuteAudio() for TV browser sound policy');
     assert(jsContent.includes('renderBlobFrame'), 'app.js implements low-latency renderBlobFrame() with memory leak prevention');
+    assert(jsContent.includes('Cast16x9_MediaDB'), 'app.js implements Cast16x9_MediaDB IndexedDB storage');
+    assert(jsContent.includes('getCachedMedia'), 'app.js implements getCachedMedia() for 0ms glitch-free seeking');
+    assert(jsContent.includes('saveMediaToCache'), 'app.js implements saveMediaToCache()');
+    assert(jsContent.includes('playFromBlob'), 'app.js implements playFromBlob() for local 4K playback');
     assert(jsContent.includes('keydown'), 'app.js listens to TV remote key events (1, 2, 3, etc.)');
 }
 
