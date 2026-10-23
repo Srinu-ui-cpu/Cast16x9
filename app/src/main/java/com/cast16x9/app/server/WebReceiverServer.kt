@@ -683,6 +683,7 @@ class WebReceiverServer(
 
         val json = JSONObject().apply {
             put("action", "stop_media")
+            put("hasMedia", false)
             put("clearCache", true)
             put("deleteFromDb", true)
         }

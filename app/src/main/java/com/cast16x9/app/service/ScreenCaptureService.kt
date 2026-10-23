@@ -126,7 +126,9 @@ class ScreenCaptureService : Service() {
         // Android 14+ explicitly requires callback registration prior to creating VirtualDisplay
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                stopCapture()
+                if (isCapturing) {
+                    stopCapture()
+                }
             }
         }, backgroundHandler)
 
@@ -175,8 +177,10 @@ class ScreenCaptureService : Service() {
         isCapturing = true
         serverInstance?.setMirroringState(true)
 
-        // Launch low-latency system audio capture
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mediaProjection != null) {
+        // Launch low-latency system audio capture (Android 10 Q to 13 Tiramisu)
+        // On Android 14+ (API 34), reusing MediaProjection token for audio causes OS to revoke the projection,
+        // which kills VirtualDisplay and produces a black screen.
+        if (Build.VERSION.SDK_INT in Build.VERSION_CODES.Q..Build.VERSION_CODES.TIRAMISU && mediaProjection != null) {
             startAudioCapture(mediaProjection!!)
         }
 
@@ -249,8 +253,11 @@ class ScreenCaptureService : Service() {
     }
 
     private fun startAudioCapture(projection: MediaProjection) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
         try {
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return
+            }
             val config = AudioPlaybackCaptureConfiguration.Builder(projection)
                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
                 .addMatchingUsage(AudioAttributes.USAGE_GAME)
@@ -261,6 +268,7 @@ class ScreenCaptureService : Service() {
             val channelMask = AudioFormat.CHANNEL_IN_STEREO
             val encoding = AudioFormat.ENCODING_PCM_16BIT
             val minBufferSize = AudioRecord.getMinBufferSize(sampleRate, channelMask, encoding)
+            if (minBufferSize <= 0) return
             val bufferSize = maxOf(minBufferSize, 8192)
 
             val record = AudioRecord.Builder()
@@ -275,6 +283,11 @@ class ScreenCaptureService : Service() {
                 .setBufferSizeInBytes(bufferSize)
                 .build()
 
+            if (record.state != AudioRecord.STATE_INITIALIZED) {
+                record.release()
+                return
+            }
+
             audioRecord = record
             record.startRecording()
             isAudioCapturing = true
@@ -282,15 +295,24 @@ class ScreenCaptureService : Service() {
             audioThread = Thread({
                 val buffer = ByteArray(4096)
                 while (isAudioCapturing) {
-                    val read = record.read(buffer, 0, buffer.size)
-                    if (read > 0) {
-                        val pcmData = buffer.copyOf(read)
-                        serverInstance?.onNewAudioChunk(pcmData)
+                    try {
+                        val read = record.read(buffer, 0, buffer.size)
+                        if (read > 0) {
+                            val pcmData = buffer.copyOf(read)
+                            serverInstance?.onNewAudioChunk(pcmData)
+                        } else if (read < 0) {
+                            break
+                        }
+                    } catch (e: Exception) {
+                        break
                     }
                 }
             }, "ScreenAudioCaptureThread").apply { start() }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            // Audio capture failure must NEVER stop or interrupt video screen mirroring
+            try { audioRecord?.release() } catch (ex: Exception) {}
+            audioRecord = null
+            isAudioCapturing = false
         }
     }
 

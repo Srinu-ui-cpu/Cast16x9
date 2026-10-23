@@ -12,6 +12,7 @@
     <!-- Foreground Screen Capture Permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Storage and Media Permissions for File Sharing and Media Beaming -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -48,7 +49,7 @@
             android:name=".service.ScreenCaptureService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection|microphone" />
 
     </application>
 

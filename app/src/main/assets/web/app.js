@@ -19,6 +19,7 @@
     let wsStreaming = false;
     let httpPollingActive = false;
     let currentBlobUrl = null;
+    let pendingRevokeUrl = null;
 
     // DOM Elements
     const statusBadge = document.getElementById('connection-status');
@@ -123,7 +124,11 @@
     // 2b. Interactive Zoom & Scale Adjustment (50% to 150%)
     function setZoomLevel(zoom, notifyServer = true) {
         zoomLevel = Math.max(50, Math.min(150, Math.round(zoom)));
-        document.documentElement.style.setProperty('--tv-zoom-scale', (zoomLevel / 100).toString());
+        const scaleFactor = (zoomLevel / 100);
+        document.documentElement.style.setProperty('--tv-zoom-scale', scaleFactor.toString());
+        if (screenStream) screenStream.style.transform = `scale(${scaleFactor}) translateZ(0)`;
+        const screenCanvas = document.getElementById('screen-canvas');
+        if (screenCanvas) screenCanvas.style.transform = `scale(${scaleFactor}) translateZ(0)`;
         if (tvZoomSlider) tvZoomSlider.value = zoomLevel;
         if (tvZoomVal) tvZoomVal.textContent = zoomLevel + '%';
 
@@ -190,12 +195,17 @@
         isMirroringActive = false;
         isFramePending = false;
         httpPollingActive = false;
-        screenStream.classList.add('hidden');
-        mirrorPlaceholder.classList.remove('hidden');
+        wsStreaming = false;
+        if (screenStream) screenStream.classList.add('hidden');
+        if (mirrorPlaceholder) mirrorPlaceholder.classList.remove('hidden');
 
         if (currentBlobUrl) {
-            URL.revokeObjectURL(currentBlobUrl);
+            try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
             currentBlobUrl = null;
+        }
+        if (pendingRevokeUrl) {
+            try { URL.revokeObjectURL(pendingRevokeUrl); } catch (e) {}
+            pendingRevokeUrl = null;
         }
     }
 
@@ -210,25 +220,30 @@
 
         if (!isMirroringActive) {
             isMirroringActive = true;
-            mirrorPlaceholder.classList.add('hidden');
-            screenStream.classList.remove('hidden');
+            if (mirrorPlaceholder) mirrorPlaceholder.classList.add('hidden');
+            if (screenStream) screenStream.classList.remove('hidden');
+        }
+
+        if (activeTab !== 'mirror') {
+            switchTab('mirror');
         }
 
         const newUrl = URL.createObjectURL(blob);
-        const oldUrl = currentBlobUrl;
+        if (pendingRevokeUrl) {
+            try { URL.revokeObjectURL(pendingRevokeUrl); } catch (e) {}
+            pendingRevokeUrl = null;
+        }
+        pendingRevokeUrl = currentBlobUrl;
         currentBlobUrl = newUrl;
         screenStream.src = newUrl;
-
-        // Revoke previous blob URL to prevent TV browser heap exhaustion
-        if (oldUrl) {
-            setTimeout(() => {
-                try { URL.revokeObjectURL(oldUrl); } catch (e) {}
-            }, 80);
-        }
     }
 
     // Mirror current frame into Ambient Canvas for dynamic blurred side-glow
     screenStream.onload = function () {
+        if (pendingRevokeUrl) {
+            try { URL.revokeObjectURL(pendingRevokeUrl); } catch (e) {}
+            pendingRevokeUrl = null;
+        }
         if (aspectMode === 'ambient' && ambientCanvas && ambientCtx) {
             try {
                 if (ambientCanvas.width !== 160) {
@@ -363,6 +378,7 @@
 
         try {
             ws = new WebSocket(wsUrl);
+            try { ws.binaryType = 'blob'; } catch (e) {}
         } catch (e) {
             scheduleReconnect();
             return;
@@ -391,6 +407,8 @@
                 } catch (e) {}
             } else if (event.data instanceof Blob) {
                 renderBlobFrame(event.data);
+            } else if (event.data instanceof ArrayBuffer) {
+                renderBlobFrame(new Blob([event.data], { type: 'image/jpeg' }));
             }
         };
 
@@ -641,13 +659,16 @@
 
         // 2. Stop and release video player completely & reclaim RAM immediately
         if (videoPlayer) {
-            videoPlayer.pause();
+            try {
+                videoPlayer.pause();
+                videoPlayer.currentTime = 0;
+            } catch (e) {}
             if (activeBlobUrl) {
                 try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
                 activeBlobUrl = null;
             }
             videoPlayer.removeAttribute('src');
-            videoPlayer.load();
+            try { videoPlayer.load(); } catch (e) {}
             videoPlayer.classList.add('hidden');
         }
 
@@ -945,7 +966,14 @@
                     setZoomLevel(data.zoomLevel, false);
                 }
 
-                if (data.hasMedia && data.activeMedia && videoPlayer.paused && videoPlayer.classList.contains('hidden')) {
+                if (!data.hasMedia) {
+                    const isVideoActive = videoPlayer && (!videoPlayer.classList.contains('hidden') || !videoPlayer.paused || videoPlayer.currentTime > 0 || videoPlayer.hasAttribute('src'));
+                    const isCaching = cachingHud && !cachingHud.classList.contains('hidden');
+                    const isPhoto = photoViewer && !photoViewer.classList.contains('hidden');
+                    if (isVideoActive || isCaching || isPhoto) {
+                        cancelActiveMedia(false);
+                    }
+                } else if (data.hasMedia && data.activeMedia && videoPlayer.paused && videoPlayer.classList.contains('hidden')) {
                     if (data.activeMedia.isVideo) {
                         switchTab('media');
                         playVideoOnTV(data.activeMedia.url, data.activeMedia.title);

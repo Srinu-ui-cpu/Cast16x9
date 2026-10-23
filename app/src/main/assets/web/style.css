@@ -171,8 +171,7 @@ body.theme-dark {
     display: block;
     z-index: 2;
     image-rendering: -webkit-optimize-contrast;
-    image-rendering: high-quality;
-    transform: scale(var(--tv-zoom-scale, 1)) translateZ(0);
+    transform: translateZ(0);
     transform-origin: center center;
     transition: transform 0.1s ease-out;
 }

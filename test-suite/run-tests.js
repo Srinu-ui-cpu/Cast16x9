@@ -670,6 +670,10 @@ function testV2ProFeatures() {
     assert(jsCode.includes('connectAudioWebSocket'), 'app.js connects to /ws/audio');
     assert(jsCode.includes('playPcmChunk'), 'app.js decodes & plays PCM audio via Web Audio API');
     assert(jsCode.includes('ambientCtx.drawImage'), 'app.js mirrors frames onto ambient canvas');
+    assert(jsCode.includes('!data.hasMedia'), 'app.js detects !data.hasMedia in syncServerStatus to immediately cancel video');
+    assert(jsCode.includes("ws.binaryType = 'blob'"), 'app.js sets ws.binaryType = blob to prevent TV frame drops');
+    assert(jsCode.includes('pendingRevokeUrl'), 'app.js implements safe blob URL revocation to prevent black screen');
+    assert(captureService.includes('Build.VERSION_CODES.UPSIDE_DOWN_CAKE'), 'ScreenCaptureService protects Android 14+ MediaProjection from single-use token revocation');
 }
 
 // =========================================================================

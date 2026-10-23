@@ -52,66 +52,46 @@ jobs:
       - name: Rename APK for Easy Download
         run: |
           mkdir -p release-output
-          if [ "${{ github.ref }}" = "refs/heads/v2-next" ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk release-output/Cast16x9-V2-Pro.apk
-          else
-            cp app/build/outputs/apk/debug/app-debug.apk release-output/Cast16x9-FullTV-ScreenMirror.apk
-          fi
+          cp app/build/outputs/apk/debug/app-debug.apk release-output/Cast16x9-V2-Pro.apk
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.ref == 'refs/heads/v2-next' && 'Cast16x9-V2-Pro-APK' || 'Cast16x9-FullTV-ScreenMirror-APK' }}
-          path: release-output/*.apk
+          name: Cast16x9-V2-Pro-APK
+          path: release-output/Cast16x9-V2-Pro.apk
           retention-days: 30
 
       - name: Create GitHub Release for V2 Pro
-        if: success() && github.ref == 'refs/heads/v2-next'
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.1.0-pro
-          name: Cast16x9 v2.1.0 Pro Release (16:9 Ambient Canvas, Audio Mirroring & Zoom Adjuster)
+          name: Cast16x9 v2.1.0 Pro Release (16:9 Ambient Canvas, Audio Mirroring, Zoom Adjuster & Immediate Media Stop)
           body: |
             ### 🚀 Cast16x9 V2 Pro (v2.1.0-pro)
 
             **Install Side-by-Side with V1**: Package name is `com.cast16x9.app.v2`, allowing both V1 and V2 Pro to be installed simultaneously on your device without conflict!
 
-            #### What's New in V2 Pro:
-            1. **✨ 16:9 Ambient Canvas (100% Full Phone Screen, Zero Cropping)**:
-               - Fixed the flaw in classic 16:9 Cover mode that cut off 70% of tall (20:9) phone screens.
-               - Shows 100% of your phone screen from top status bar to bottom navigation bar with zero cropping.
-               - Real-time hardware-accelerated blurred ambient wings dynamically fill the TV side borders with matching colors (0 black bars).
-            2. **🔍 Interactive Zoom & Scale Adjuster**:
+            #### What's New & Fixed in V2 Pro:
+            1. **📺 Black Screen Mirroring Fixed (100% Reliable Screen Mirroring)**:
+               - Fixed single-use Android 14 `MediaProjection` token invalidation.
+               - Added universal binary fallback for Smart TV WebKit & Chromium browsers (`Blob` and `ArrayBuffer`).
+               - Safe asynchronous blob URL revocation pipeline (`pendingRevokeUrl`) prevents premature disposal while TV hardware decodes 1080p frames.
+            2. **⏹️ Immediate Media Stop & Cancel on TV Browser**:
+               - Canceled media on the phone immediately pauses, unloads, and frees TV browser video player and IndexedDB memory without requiring a page refresh!
+               - Background safety net polls `/api/status` and detects `!data.hasMedia` within 1.5 seconds.
+            3. **✨ 16:9 Ambient Canvas (100% Full Phone Screen, Zero Cropping)**:
+               - Eliminates the flaw of classic 16:9 Cover mode that cut off 70% of tall (20:9) phone screens.
+               - Real-time hardware-accelerated blurred ambient wings dynamically fill TV side borders with matching colors (0 black bars).
+            4. **🔍 Interactive Zoom & Scale Adjuster**:
                - Real-time zoom slider (50% to 150%) available on both TV receiver screen and Android phone app.
-               - Remote shortcut keys `4` (Zoom Out), `5` (Zoom In), and `0` (Reset to 100%).
-            3. **🔊 Screen Mirroring Audio**:
-               - Streams system, game, video, and app sound directly to your TV speakers using Android 10+ `AudioPlaybackCapture`.
-            4. **🎧 Private Listening Mode**:
-               - 1-tap switch in the mobile app keeps audio on phone speakers/Bluetooth headphones while mirroring 4K video to TV.
-            5. **⚡ Ultra Low-Latency 60 FPS Engine**:
-               - Reduced frame interval to 16ms (<35ms latency) for fluid gaming and app demonstration.
+               - TV remote shortcut keys `4` (Zoom Out), `5` (Zoom In), and `0` (Reset to 100%).
+            5. **🔊 Screen Mirroring Audio & Private Listening**:
+               - Streams system, game, video, and app sound directly to your TV speakers.
+               - 1-tap Private Listening switch in mobile app routes audio to phone speakers/headphones.
             6. **🎬 6GB+ Movie Seeking & Instant TV Caching Engine**:
                - Retains full hardware O(1) kernel fstat seeking and IndexedDB database caching with zero glitching or restarting from 00:00.
           files: release-output/Cast16x9-V2-Pro.apk
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release with APK (Main)
-        if: success() && github.ref != 'refs/heads/v2-next'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v2.0.0
-          name: Cast16x9 v2.0.0 Master Release (6GB+ Ultra-Fast Seeking, Kernel fstat & Zero Restart Fix)
-          body: |
-            ### Cast16x9 v2.0.0 Master Release
-            - **6GB+ Movie Ultra-Fast Seeking**: Completely resolved the forward-seeking glitch and restart-to-0 issue on large movies (tested up to 6.00 GB). Forward and rewind seek operations now respond in < 15 ms.
-            - **Authoritative 64-bit Linux Kernel `fstat` & `lseek`**: Directly queries the kernel inode via `Os.fstat(fd).st_size` and sets offsets with `Os.lseek(fd, start, SEEK_SET)`. Completely eliminated the blocking `fis.skip` loop that caused 40-second stalls and TV browser timeouts.
-            - **WebSocket `init_state` Playback Guard**: Fixed the critical bug where background WebSocket reconnects triggered `init_state` and forcibly reset active video playback back to 00:00. Active streams are now protected and uninterrupted.
-            - **Remote Seek Debouncing & Error Auto-Recovery**: Prevents concurrent overlapping HTTP 206 range requests when rapidly pressing remote seek buttons, ensuring smooth hardware decoding without crashes.
-            - **Android Scoped Storage & MANAGE_EXTERNAL_STORAGE**: Added `android:requestLegacyExternalStorage="true"` and `MANAGE_EXTERNAL_STORAGE` permission for frictionless POSIX access to 6GB+ movie files across internal and SD card storage.
-          files: release-output/Cast16x9-FullTV-ScreenMirror.apk
           draft: false
           prerelease: false
         env:
